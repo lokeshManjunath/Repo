@@ -1,0 +1,17 @@
+http:
+  port: "8081"
+
+external:
+  jsonplaceholder:
+    host: "jsonplaceholder.typicode.com"
+    port: "443"
+    protocol: "HTTPS"
+
+order:
+  notification:
+    queue-name: "order-notifications"
+    max-outstanding: "500"
+
+logging:
+  correlation-id-header: "X-Correlation-ID"
+  app-version: "1.0.0"

@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:munit="http://www.mulesoft.org/schema/mule/munit"
+      xmlns:munit-tools="http://www.mulesoft.org/schema/mule/munit-tools"
+      xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core         http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/munit        http://www.mulesoft.org/schema/mule/munit/current/mule-munit.xsd
+          http://www.mulesoft.org/schema/mule/munit-tools  http://www.mulesoft.org/schema/mule/munit-tools/current/mule-munit-tools.xsd
+          http://www.mulesoft.org/schema/mule/java         http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+    <munit:config name="order-api-test-suite.xml"/>
+
+    <munit:before-suite name="before-suite-clear-repo">
+        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                            method="clearAll()" doc:name="Clear Repository"/>
+    </munit:before-suite>
+
+    <munit:test name="test-health-check" doc:name="Health Check returns UP status">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <flow-ref name="health-check-impl-flow"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.status]"
+                is="#[MunitTools::equalTo('UP')]"/>
+            <munit-tools:assert-that expression="#[payload.app != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-create-order-standard" doc:name="Create Order STANDARD success">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref"
+                                                whereValue="jsonplaceholder-request-config"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java"
+                        value="#[{ id: 1, name: 'Alice Smith', email: 'alice@test.com', enriched: true }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <munit-tools:mock-when processor="vm:publish">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref"
+                                                whereValue="order-notifications-vm-config"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return/>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload mediaType="application/java"
+                    value="#[{ customerId: '1', items: [{ productId: 'P1', name: 'Widget', quantity: 1, unitPrice: 50.0 }], totalAmount: 50.0 }]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: { 'X-Correlation-ID': 'test-001' }, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="create-order-impl-flow"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.orderId != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+            <munit-tools:assert-that expression="#[payload.status]"
+                is="#[MunitTools::equalTo('PENDING')]"/>
+            <munit-tools:assert-that expression="#[payload.priority]"
+                is="#[MunitTools::equalTo('STANDARD')]"/>
+            <munit-tools:assert-that expression="#[payload.processingLane]"
+                is="#[MunitTools::equalTo('STANDARD_LANE')]"/>
+            <munit-tools:assert-that expression="#[payload.totalAmount]"
+                is="#[MunitTools::equalTo(50.0)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-create-order-priority" doc:name="Create Order PRIORITY lane">
+        <munit:behavior>
+            <munit-tools:mock-when processor="http:request">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref"
+                                                whereValue="jsonplaceholder-request-config"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return>
+                    <munit-tools:payload mediaType="application/java"
+                        value="#[{ id: 2, name: 'Enterprise Corp', email: 'corp@test.com' }]"/>
+                </munit-tools:then-return>
+            </munit-tools:mock-when>
+            <munit-tools:mock-when processor="vm:publish">
+                <munit-tools:with-attributes>
+                    <munit-tools:with-attribute attributeName="config-ref"
+                                                whereValue="order-notifications-vm-config"/>
+                </munit-tools:with-attributes>
+                <munit-tools:then-return/>
+            </munit-tools:mock-when>
+        </munit:behavior>
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload mediaType="application/java"
+                    value="#[{ customerId: '2', items: [{ productId: 'ENT', name: 'License', quantity: 1, unitPrice: 15000.0 }], totalAmount: 15000.0 }]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="create-order-impl-flow"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.priority]"
+                is="#[MunitTools::equalTo('PRIORITY')]"/>
+            <munit-tools:assert-that expression="#[payload.processingLane]"
+                is="#[MunitTools::equalTo('PRIORITY_LANE')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-create-order-no-customer"
+                doc:name="Validation fails missing customerId"
+                expectedErrorType="APP:VALIDATION">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload mediaType="application/java"
+                    value="#[{ items: [{ productId: 'P1', quantity: 1, unitPrice: 10.0 }], totalAmount: 10.0 }]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="create-order-impl-flow"/>
+        </munit:execution>
+    </munit:test>
+
+    <munit:test name="test-create-order-empty-items"
+                doc:name="Validation fails empty items array"
+                expectedErrorType="APP:VALIDATION">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload mediaType="application/java"
+                    value="#[{ customerId: '5', items: [], totalAmount: 0.0 }]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="create-order-impl-flow"/>
+        </munit:execution>
+    </munit:test>
+
+    <munit:test name="test-list-orders" doc:name="List Orders returns collection">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[null]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="list-orders-impl-flow"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.total != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+            <munit-tools:assert-that expression="#[payload.orders != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-get-order-not-found"
+                doc:name="Get Order NOT_FOUND for unknown ID"
+                expectedErrorType="APP:NOT_FOUND">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[null]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, uriParams: { orderId: 'ORD-UNKNOWN-999' }, queryParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="get-order-impl-flow"/>
+        </munit:execution>
+    </munit:test>
+
+    <munit:test name="test-java-validator-valid" doc:name="OrderValidator valid order">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                                method="validate(Map)" target="result">
+                <java:args>#[{ orderData: { customerId: 'C1', items: [{ productId: 'P1', quantity: 1, unitPrice: 99.0 }], totalAmount: 99.0 } }]</java:args>
+            </java:invoke-static>
+            <set-payload value="#[vars.result]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.valid]"
+                is="#[MunitTools::equalTo(true)]"/>
+            <munit-tools:assert-that expression="#[sizeOf(payload.errors)]"
+                is="#[MunitTools::equalTo(0)]"/>
+            <munit-tools:assert-that expression="#[payload.priority]"
+                is="#[MunitTools::equalTo('STANDARD')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-java-validator-express" doc:name="OrderValidator EXPRESS priority">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                                method="validate(Map)" target="result">
+                <java:args>#[{ orderData: { customerId: 'C2', items: [{ productId: 'P2', quantity: 2, unitPrice: 800.0 }], totalAmount: 1600.0 } }]</java:args>
+            </java:invoke-static>
+            <set-payload value="#[vars.result]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.priority]"
+                is="#[MunitTools::equalTo('EXPRESS')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-java-valid-transition" doc:name="Valid PENDING to CONFIRMED transition">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                                method="isValidStatusTransition(String, String)" target="result">
+                <java:args>#[{ currentStatus: 'PENDING', newStatus: 'CONFIRMED' }]</java:args>
+            </java:invoke-static>
+            <set-payload value="#[vars.result]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload]"
+                is="#[MunitTools::equalTo(true)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-java-invalid-transition" doc:name="Invalid SHIPPED to PENDING transition">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                                method="isValidStatusTransition(String, String)" target="result">
+                <java:args>#[{ currentStatus: 'SHIPPED', newStatus: 'PENDING' }]</java:args>
+            </java:invoke-static>
+            <set-payload value="#[vars.result]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload]"
+                is="#[MunitTools::equalTo(false)]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-java-repository-roundtrip" doc:name="Repository save and retrieve">
+        <munit:execution>
+            <munit:set-event><munit:payload value="#[null]"/></munit:set-event>
+            <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                                method="save(String, Map)" target="saved">
+                <java:args>#[{ orderId: 'ORD-TEST-001', order: { orderId: 'ORD-TEST-001', customerId: 'C1', status: 'PENDING', totalAmount: 200.0, items: [] } }]</java:args>
+            </java:invoke-static>
+            <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                                method="findById(String)" target="found">
+                <java:args>#[{ orderId: 'ORD-TEST-001' }]</java:args>
+            </java:invoke-static>
+            <set-payload value="#[vars.found]"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+            <munit-tools:assert-that expression="#[payload.orderId]"
+                is="#[MunitTools::equalTo('ORD-TEST-001')]"/>
+            <munit-tools:assert-that expression="#[payload.status]"
+                is="#[MunitTools::equalTo('PENDING')]"/>
+        </munit:validation>
+    </munit:test>
+
+    <munit:test name="test-order-stats" doc:name="Order Statistics returns metrics">
+        <munit:execution>
+            <munit:set-event>
+                <munit:payload value="#[null]"/>
+                <munit:attributes mediaType="application/java"
+                    value="#[{ headers: {}, queryParams: {}, uriParams: {} }]"/>
+            </munit:set-event>
+            <flow-ref name="order-stats-impl-flow"/>
+        </munit:execution>
+        <munit:validation>
+            <munit-tools:assert-that expression="#[payload.summary != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+            <munit-tools:assert-that expression="#[payload.byStatus != null]"
+                is="#[MunitTools::equalTo(true)]"/>
+        </munit:validation>
+    </munit:test>
+
+</mule>

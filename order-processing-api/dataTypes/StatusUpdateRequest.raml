@@ -1,0 +1,27 @@
+#%RAML 1.0 DataType
+displayName: StatusUpdateRequest
+description: Request payload for updating an order's status.
+
+type: object
+properties:
+  status:
+    type: string
+    enum: [CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+    description: |
+      Target status for the transition. Valid state-machine paths:
+        PENDING    → CONFIRMED | CANCELLED
+        CONFIRMED  → PROCESSING | CANCELLED
+        PROCESSING → SHIPPED    | CANCELLED
+        SHIPPED    → DELIVERED
+        DELIVERED  → (terminal)
+        CANCELLED  → (terminal)
+    example: "CONFIRMED"
+  reason:
+    type: string
+    required: false
+    description: Optional reason or comment for the status change (e.g. cancellation reason)
+    example: "Customer requested cancellation"
+
+example:
+  status: "CONFIRMED"
+  reason: "Payment verified"

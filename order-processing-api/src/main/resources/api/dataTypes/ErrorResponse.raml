@@ -1,0 +1,47 @@
+#%RAML 1.0 DataType
+displayName: ErrorResponse
+description: |
+  Standard error envelope returned for all 4xx and 5xx responses.
+  Provides a consistent error contract for all API consumers.
+
+  Error code → HTTP status mapping:
+    VALIDATION_ERROR       → 400
+    NOT_FOUND              → 404
+    CONFLICT               → 409
+    EXTERNAL_SERVICE_ERROR → 502
+    INTERNAL_ERROR         → 500
+
+type: object
+properties:
+  error:
+    type: object
+    description: Top-level error container
+    properties:
+      code:
+        type: string
+        description: Machine-readable error code for programmatic handling
+        enum:
+          - VALIDATION_ERROR
+          - NOT_FOUND
+          - CONFLICT
+          - EXTERNAL_SERVICE_ERROR
+          - INTERNAL_ERROR
+          - BAD_REQUEST
+          - METHOD_NOT_ALLOWED
+          - RESOURCE_NOT_FOUND
+        example: "VALIDATION_ERROR"
+      message:
+        type: string
+        description: Human-readable error description suitable for display
+        example: "customerId is required and cannot be blank"
+      requestId:
+        type: string
+        required: false
+        description: Correlation ID from the original request for tracing
+        example: "550e8400-e29b-41d4-a716-446655440000"
+
+example:
+  error:
+    code: "VALIDATION_ERROR"
+    message: "customerId is required and cannot be blank"
+    requestId: "550e8400-e29b-41d4-a716-446655440000"

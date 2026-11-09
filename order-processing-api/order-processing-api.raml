@@ -1,0 +1,273 @@
+#%RAML 1.0
+title: Order Processing API
+version: v1
+baseUri: http://localhost:8081/api/{version}
+mediaType: application/json
+
+description: |
+  REST API for the Order Processing system.
+  Demonstrates API-led connectivity, process orchestration with state-machine
+  enforcement, Java components, DataWeave transformations, Scatter-Gather
+  enrichment, and asynchronous VM queue processing.
+
+  ## Order Lifecycle State Machine
+  ```
+  PENDING → CONFIRMED | CANCELLED
+  CONFIRMED → PROCESSING | CANCELLED
+  PROCESSING → SHIPPED | CANCELLED
+  SHIPPED → DELIVERED
+  DELIVERED → (terminal)
+  CANCELLED → (terminal)
+  ```
+
+documentation:
+  - title: Getting Started
+    content: |
+      Use `POST /orders` to create a new order. Poll `GET /orders/{orderId}`
+      to track its status. Advance the lifecycle via `PUT /orders/{orderId}`.
+      Use `GET /orders/stats` for aggregate metrics.
+  - title: Authentication
+    content: |
+      Pass `client_id` and `client_secret` as headers on every request.
+      Obtain credentials by requesting access to this API on Anypoint Exchange.
+  - title: Error Handling
+    content: |
+      All errors return an `ErrorResponse` with a `code`, `message`, and `timestamp`.
+      Common codes: ORDER_NOT_FOUND, VALIDATION_ERROR, INVALID_STATUS_TRANSITION.
+
+types:
+  OrderItem:           !include dataTypes/OrderItem.raml
+  ShippingAddress:     !include dataTypes/ShippingAddress.raml
+  OrderRequest:        !include dataTypes/OrderRequest.raml
+  StatusUpdateRequest: !include dataTypes/StatusUpdateRequest.raml
+  OrderResponse:       !include dataTypes/OrderResponse.raml
+  OrderListResponse:   !include dataTypes/OrderListResponse.raml
+  OrderStatsResponse:  !include dataTypes/OrderStatsResponse.raml
+  ErrorResponse:       !include dataTypes/ErrorResponse.raml
+
+traits:
+  secured:
+    description: Requires client_id and client_secret header authentication
+    headers:
+      client_id:
+        type: string
+        description: Client ID obtained from Anypoint Exchange
+        example: "abc123clientid"
+      client_secret:
+        type: string
+        description: Client Secret obtained from Anypoint Exchange
+        example: "xyz789clientsecret"
+    responses:
+      401:
+        description: Missing or invalid client credentials
+        body:
+          application/json:
+            type: ErrorResponse
+            example:
+              code: "UNAUTHORIZED"
+              message: "Invalid or missing client_id / client_secret"
+              timestamp: "2026-11-09T09:00:00.000Z"
+  errorResponses:
+    responses:
+      400:
+        description: Bad request — validation error or malformed payload
+        body:
+          application/json:
+            type: ErrorResponse
+            example:
+              code: "VALIDATION_ERROR"
+              message: "Field 'customerId' must not be blank"
+              timestamp: "2026-11-09T09:00:00.000Z"
+      500:
+        description: Internal server error
+        body:
+          application/json:
+            type: ErrorResponse
+            example:
+              code: "INTERNAL_ERROR"
+              message: "An unexpected error occurred. Please try again later."
+              timestamp: "2026-11-09T09:00:00.000Z"
+
+/health:
+  description: API health check endpoint for monitoring and load balancers
+  get:
+    description: Returns the application health status and available endpoints
+    responses:
+      200:
+        description: Application is healthy and running
+        body:
+          application/json:
+            example:
+              status: "UP"
+              app: "Order Processing API"
+              version: "1.0.0"
+              timestamp: "2026-11-09T09:00:00.000Z"
+
+/orders:
+  description: Order management resource — create and list orders
+
+  get:
+    description: |
+      Retrieves all orders. Supports optional status filtering via the `status`
+      query parameter. Returns a paginated list of OrderResponse objects.
+    is: [secured, errorResponses]
+    queryParameters:
+      status?:
+        type: string
+        enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+        description: Filter orders by status (case-insensitive). Omit to return all orders.
+        example: "PENDING"
+      page?:
+        type: integer
+        minimum: 1
+        default: 1
+        description: Page number for pagination (1-based)
+        example: 1
+      pageSize?:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+        description: Number of orders per page
+        example: 20
+    responses:
+      200:
+        description: List of orders returned successfully
+        body:
+          application/json:
+            type: OrderListResponse
+
+  post:
+    description: |
+      Creates a new order. The processing pipeline performs these steps:
+        1. Validates business rules via Java component (OrderValidator)
+        2. Generates a unique order ID (ORD-{timestamp}-{random4digits})
+        3. In parallel via Scatter-Gather: enriches customer data from CRM + builds audit entry
+        4. Assigns processing priority (STANDARD/EXPRESS/BULK) and lane via Choice Router
+        5. Persists the order to the in-memory repository (OrderRepository)
+        6. Publishes an async notification to VM queue (fire-and-forget)
+        7. Returns the enriched OrderResponse
+    is: [secured, errorResponses]
+    body:
+      application/json:
+        type: OrderRequest
+    responses:
+      201:
+        description: Order created successfully
+        headers:
+          Location:
+            type: string
+            description: URI of the newly created order
+            example: "/api/v1/orders/ORD-1731058800000-4521"
+        body:
+          application/json:
+            type: OrderResponse
+      400:
+        description: Validation error — missing or invalid fields
+        body:
+          application/json:
+            type: ErrorResponse
+            example:
+              code: "VALIDATION_ERROR"
+              message: "Order must contain at least one item"
+              timestamp: "2026-11-09T09:00:00.000Z"
+
+  /stats:
+    description: Order aggregate statistics and revenue metrics
+    get:
+      description: |
+        Returns order counts broken down by status, total revenue across
+        all non-cancelled orders, and the average order value.
+      is: [secured]
+      responses:
+        200:
+          description: Statistics calculated successfully
+          body:
+            application/json:
+              type: OrderStatsResponse
+
+  /{orderId}:
+    description: Operations on a specific order identified by its unique orderId
+    uriParameters:
+      orderId:
+        type: string
+        description: Unique order identifier in format ORD-{timestamp}-{random4digits}
+        example: "ORD-1731058800000-4521"
+        pattern: "^ORD-[0-9]+-[0-9]{4}$"
+
+    get:
+      description: |
+        Retrieves full order details including line-items, enriched customer data,
+        audit trail, and HATEOAS navigation links (self, update, delete).
+      is: [secured, errorResponses]
+      responses:
+        200:
+          description: Order found and returned
+          body:
+            application/json:
+              type: OrderResponse
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
+              example:
+                code: "ORDER_NOT_FOUND"
+                message: "Order with ID ORD-1731058800000-4521 was not found"
+                timestamp: "2026-11-09T09:00:00.000Z"
+
+    put:
+      description: |
+        Updates the order status. Server-side state-machine transitions are enforced:
+          PENDING    → CONFIRMED | CANCELLED
+          CONFIRMED  → PROCESSING | CANCELLED
+          PROCESSING → SHIPPED    | CANCELLED
+          SHIPPED    → DELIVERED
+          DELIVERED  → (terminal — no further transitions allowed)
+          CANCELLED  → (terminal — no further transitions allowed)
+      is: [secured, errorResponses]
+      body:
+        application/json:
+          type: StatusUpdateRequest
+      responses:
+        200:
+          description: Order status updated successfully
+          body:
+            application/json:
+              type: OrderResponse
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
+              example:
+                code: "ORDER_NOT_FOUND"
+                message: "Order with ID ORD-1731058800000-4521 was not found"
+                timestamp: "2026-11-09T09:00:00.000Z"
+        409:
+          description: Invalid status transition — state-machine violation
+          body:
+            application/json:
+              type: ErrorResponse
+              example:
+                code: "INVALID_STATUS_TRANSITION"
+                message: "Cannot transition from DELIVERED to CONFIRMED"
+                timestamp: "2026-11-09T09:00:00.000Z"
+
+    delete:
+      description: |
+        Cancels and permanently removes an order.
+        Returns 204 with no body on success.
+      is: [secured]
+      responses:
+        204:
+          description: Order deleted successfully — no response body
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
+              example:
+                code: "ORDER_NOT_FOUND"
+                message: "Order with ID ORD-1731058800000-4521 was not found"
+                timestamp: "2026-11-09T09:00:00.000Z"

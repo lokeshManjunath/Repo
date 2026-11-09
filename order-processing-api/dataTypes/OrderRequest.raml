@@ -1,0 +1,47 @@
+#%RAML 1.0 DataType
+displayName: OrderRequest
+description: Request payload for creating a new order. Sent as the body of POST /orders.
+
+type: object
+properties:
+  customerId:
+    type: string
+    description: ID of the customer placing the order (must be non-blank)
+    example: "CUST-001"
+  items:
+    type: array
+    items: !include OrderItem.raml
+    minItems: 1
+    maxItems: 50
+    description: One or more line-items in the order
+  totalAmount:
+    type: number
+    minimum: 0.01
+    maximum: 100000
+    description: Total order value in USD (sum of quantity × unitPrice for all items)
+    example: 50.00
+  shippingAddress:
+    type: !include ShippingAddress.raml
+    required: false
+    description: Delivery address (optional — uses customer default address if omitted)
+  notes:
+    type: string
+    required: false
+    description: Special instructions, gift messages, or other free-text notes
+    example: "Please leave at the door"
+
+example:
+  customerId: "CUST-001"
+  items:
+    - productId: "PROD-101"
+      name: "Widget Pro"
+      quantity: 2
+      unitPrice: 25.00
+  totalAmount: 50.00
+  shippingAddress:
+    street: "123 Main Street"
+    city: "New York"
+    state: "NY"
+    postalCode: "10001"
+    country: "US"
+  notes: "Please leave at the door"

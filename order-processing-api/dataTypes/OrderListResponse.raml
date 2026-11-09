@@ -1,0 +1,50 @@
+#%RAML 1.0 DataType
+displayName: OrderListResponse
+description: Paginated list of orders returned by GET /orders.
+
+type: object
+properties:
+  orders:
+    type: array
+    items: !include OrderResponse.raml
+    description: Array of order objects
+  total:
+    type: integer
+    description: Total number of orders matching the filter
+    example: 42
+  page:
+    type: integer
+    description: Current page number (1-based)
+    example: 1
+  pageSize:
+    type: integer
+    description: Number of orders returned per page
+    example: 20
+
+example:
+  orders:
+    - orderId: "ORD-1731058800000-4521"
+      customerId: "CUST-001"
+      status: "PENDING"
+      items:
+        - productId: "PROD-101"
+          name: "Widget Pro"
+          quantity: 2
+          unitPrice: 25.00
+      totalAmount: 50.00
+      createdAt: "2026-11-09T09:00:00.000Z"
+      updatedAt: "2026-11-09T09:00:00.000Z"
+    - orderId: "ORD-1731058800001-7832"
+      customerId: "CUST-002"
+      status: "CONFIRMED"
+      items:
+        - productId: "PROD-202"
+          name: "Gadget Plus"
+          quantity: 1
+          unitPrice: 99.99
+      totalAmount: 99.99
+      createdAt: "2026-11-09T08:30:00.000Z"
+      updatedAt: "2026-11-09T08:45:00.000Z"
+  total: 42
+  page: 1
+  pageSize: 20

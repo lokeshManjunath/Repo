@@ -1,0 +1,17 @@
+# Mule build artifacts
+target/
+.mule/
+
+# IDE files
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+
+# Maven
+*.class
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http  http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/vm    http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd">
+
+    <configuration-properties file="application.yaml" doc:name="Application Properties"/>
+
+    <http:listener-config name="api-http-listener-config" doc:name="API HTTP Listener">
+        <http:listener-connection host="0.0.0.0" port="${http.port}"/>
+    </http:listener-config>
+
+    <http:request-config name="jsonplaceholder-request-config"
+                         doc:name="JSONPlaceholder Config" basePath="/users">
+        <http:request-connection host="${external.jsonplaceholder.host}"
+                                 port="${external.jsonplaceholder.port}"
+                                 protocol="${external.jsonplaceholder.protocol}"/>
+    </http:request-config>
+
+    <vm:config name="order-notifications-vm-config" doc:name="Order Notifications VM">
+        <vm:queues>
+            <vm:queue queueName="${order.notification.queue-name}"
+                      maxOutstandingMessages="${order.notification.max-outstanding}"/>
+        </vm:queues>
+    </vm:config>
+
+    <error-handler name="global-error-handler" doc:name="Global Error Handler">
+
+        <on-error-propagate type="APP:VALIDATION" enableNotifications="false">
+            <set-variable variableName="httpStatus" value="400"/>
+            <set-payload mimeType="application/json"
+                         value="#[output application/json --- { error: { code: 'VALIDATION_ERROR', message: error.description, requestId: (vars.correlationId default 'none') } }]"/>
+            <logger level="WARN" message='[400] #[error.description]'/>
+        </on-error-propagate>
+
+        <on-error-propagate type="APP:NOT_FOUND" enableNotifications="false">
+            <set-variable variableName="httpStatus" value="404"/>
+            <set-payload mimeType="application/json"
+                         value="#[output application/json --- { error: { code: 'NOT_FOUND', message: error.description, requestId: (vars.correlationId default 'none') } }]"/>
+            <logger level="INFO" message='[404] #[error.description]'/>
+        </on-error-propagate>
+
+        <on-error-propagate type="APP:CONFLICT" enableNotifications="false">
+            <set-variable variableName="httpStatus" value="409"/>
+            <set-payload mimeType="application/json"
+                         value="#[output application/json --- { error: { code: 'CONFLICT', message: error.description, requestId: (vars.correlationId default 'none') } }]"/>
+        </on-error-propagate>
+
+        <on-error-propagate type="HTTP:CONNECTIVITY, HTTP:TIMEOUT">
+            <set-variable variableName="httpStatus" value="502"/>
+            <set-payload mimeType="application/json"
+                         value="#[output application/json --- { error: { code: 'EXTERNAL_SERVICE_ERROR', message: 'Upstream service unavailable. Please retry.', requestId: (vars.correlationId default 'none') } }]"/>
+            <logger level="ERROR" message='[502] #[error.errorType] - #[error.description]'/>
+        </on-error-propagate>
+
+        <on-error-propagate type="ANY" enableNotifications="true">
+            <set-variable variableName="httpStatus" value="500"/>
+            <set-payload mimeType="application/json"
+                         value="#[output application/json --- { error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred.', requestId: (vars.correlationId default 'none') } }]"/>
+            <logger level="ERROR" message='[500] #[error.errorType] - #[error.description]'/>
+        </on-error-propagate>
+
+    </error-handler>
+
+</mule>

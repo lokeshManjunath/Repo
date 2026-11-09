@@ -1,0 +1,11 @@
+{
+  "main": "order-processing-api.raml",
+  "name": "Order Processing API",
+  "classifier": "raml",
+  "organizationId": "a97a1988-1020-4534-be5e-c1da02d06f50",
+  "descriptorVersion": "1.0.0",
+  "groupId": "a97a1988-1020-4534-be5e-c1da02d06f50",
+  "assetId": "order-processing-api-spec",
+  "version": "1.0.0",
+  "tags": ["rest-api", "orders", "mulesoft", "raml"]
+}

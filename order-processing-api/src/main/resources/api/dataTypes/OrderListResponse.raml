@@ -1,0 +1,75 @@
+#%RAML 1.0 DataType
+displayName: OrderListResponse
+description: Paginated/filtered list of orders returned by GET /orders.
+
+type: object
+properties:
+  total:
+    type: integer
+    description: Total number of orders in the result set (after filtering)
+    example: 5
+  appliedFilter:
+    type: string
+    description: Status filter that was applied, or "none" if no filter was specified
+    example: "PENDING"
+  orders:
+    type: array
+    description: Array of order summary objects (subset of full OrderResponse fields)
+    items:
+      type: object
+      properties:
+        orderId:
+          type: string
+          example: "ORD-1731058800000-1234"
+        customerId:
+          type: string
+          example: "CUST-001"
+        customerName:
+          type: string
+          example: "Alice Smith"
+        status:
+          type: string
+          enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+          example: "PENDING"
+        priority:
+          type: string
+          enum: [STANDARD, EXPRESS, PRIORITY]
+          example: "STANDARD"
+        totalAmount:
+          type: number
+          example: 50.00
+        itemCount:
+          type: integer
+          example: 1
+        createdAt:
+          type: string
+          example: "2026-11-08T12:00:00+0000"
+        links:
+          type: object
+          example:
+            self: "/api/v1/orders/ORD-1731058800000-1234"
+
+example:
+  total: 2
+  appliedFilter: "none"
+  orders:
+    - orderId: "ORD-1731058800000-1234"
+      customerId: "CUST-001"
+      customerName: "Alice Smith"
+      status: "PENDING"
+      priority: "STANDARD"
+      totalAmount: 50.00
+      itemCount: 1
+      createdAt: "2026-11-08T12:00:00+0000"
+      links:
+        self: "/api/v1/orders/ORD-1731058800000-1234"
+    - orderId: "ORD-1731058801000-5678"
+      customerId: "CUST-002"
+      customerName: "Bob Corp"
+      status: "CONFIRMED"
+      priority: "EXPRESS"
+      totalAmount: 1500.00
+      itemCount: 3
+      createdAt: "2026-11-08T12:01:00+0000"
+      links:
+        self: "/api/v1/orders/ORD-1731058801000-5678"

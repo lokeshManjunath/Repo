@@ -1,0 +1,77 @@
+#%RAML 1.0 DataType
+displayName: OrderStatsResponse
+description: Aggregate order statistics returned by GET /orders/stats.
+
+type: object
+properties:
+  summary:
+    type: object
+    description: High-level aggregated metrics snapshot
+    properties:
+      totalOrders:
+        type: integer
+        description: Total number of orders across all statuses
+        example: 42
+      totalRevenue:
+        type: number
+        description: |
+          Sum of totalAmount for all non-cancelled orders
+          (CONFIRMED, PROCESSING, SHIPPED, DELIVERED).
+        example: 125750.00
+      avgOrderValue:
+        type: number
+        description: totalRevenue divided by totalOrders
+        example: 2994.05
+      generatedAt:
+        type: string
+        description: ISO-8601 timestamp when these statistics were calculated
+        example: "2026-11-08T17:30:00+0530"
+  byStatus:
+    type: object
+    description: Order counts broken down by lifecycle status
+    properties:
+      PENDING:
+        type: integer
+        example: 10
+      CONFIRMED:
+        type: integer
+        example: 8
+      PROCESSING:
+        type: integer
+        example: 6
+      SHIPPED:
+        type: integer
+        example: 5
+      DELIVERED:
+        type: integer
+        example: 9
+      CANCELLED:
+        type: integer
+        example: 4
+  links:
+    type: object
+    description: HATEOAS navigation links
+    properties:
+      orders:
+        type: string
+        example: "/api/v1/orders"
+      health:
+        type: string
+        example: "/api/v1/health"
+
+example:
+  summary:
+    totalOrders: 42
+    totalRevenue: 125750.00
+    avgOrderValue: 2994.05
+    generatedAt: "2026-11-08T17:30:00+0530"
+  byStatus:
+    PENDING: 10
+    CONFIRMED: 8
+    PROCESSING: 6
+    SHIPPED: 5
+    DELIVERED: 9
+    CANCELLED: 4
+  links:
+    orders: "/api/v1/orders"
+    health: "/api/v1/health"
