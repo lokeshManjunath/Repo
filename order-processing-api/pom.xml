@@ -3,17 +3,17 @@
 
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>com.mulesoft.interview</groupId>
-	<artifactId>order-processing-api</artifactId>
+	<artifactId>order-processing-papi</artifactId>
 	<version>1.0.0</version>
 	<packaging>mule-application</packaging>
-	<name>order-processing-api</name>
+	<name>order-processing-papi</name>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<app.runtime>4.10.0</app.runtime>
 		<mule.maven.plugin.version>4.10.3</mule.maven.plugin.version>
-		<munit.version>3.6.1</munit.version>
+		<munit.version>3.7.6</munit.version>
 	</properties>
 
 	<build>
@@ -64,51 +64,51 @@
 				</configuration>
 			</plugin>
 			<plugin>
-    <groupId>org.mule.tools.maven</groupId>
-    <artifactId>mule-maven-plugin</artifactId>
-    <version>${mule.maven.plugin.version}</version>
-    <extensions>true</extensions>
-    <configuration>
-        <cloudHub2Deployment>
-            <!-- Anypoint Platform connection -->
-            <uri>https://anypoint.mulesoft.com</uri>
-            <provider>MC</provider>
-            <connectedAppClientId>${anypoint.client.id}</connectedAppClientId>
-            <connectedAppClientSecret>${anypoint.client.secret}</connectedAppClientSecret>
-            <connectedAppGrantType>client_credentials</connectedAppGrantType>
+				<groupId>org.mule.tools.maven</groupId>
+				<artifactId>mule-maven-plugin</artifactId>
+				<version>${mule.maven.plugin.version}</version>
+				<extensions>true</extensions>
+				<configuration>
+					<cloudHub2Deployment>
+						<!-- Anypoint Platform connection -->
+						<uri>https://anypoint.mulesoft.com</uri>
+						<provider>MC</provider>
+						<connectedAppClientId>${anypoint.client.id}</connectedAppClientId>
+						<connectedAppClientSecret>${anypoint.client.secret}</connectedAppClientSecret>
+						<connectedAppGrantType>client_credentials</connectedAppGrantType>
 
-            <!-- Target organization and environment -->
-            <businessGroupId>${anypoint.org.id}</businessGroupId>
-            <environment>${anypoint.env}</environment>
+						<!-- Target organization and environment -->
+						<businessGroupId>${anypoint.org.id}</businessGroupId>
+						<environment>${anypoint.env}</environment>
 
-            <!-- CloudHub 2.0 target fabric / shared space -->
-            <target>${anypoint.target}</target>
+						<!-- CloudHub 2.0 target fabric / shared space -->
+						<target>${anypoint.target}</target>
 
-            <!-- Application identity -->
-            <applicationName>${anypoint.app.name}</applicationName>
-            <muleVersion>${mule.version}</muleVersion>
+						<!-- Application identity -->
+						<applicationName>${anypoint.app.name}</applicationName>
+						<muleVersion>${mule.version}</muleVersion>
 
-            <!-- Resource allocation -->
-            <vCores>${vcores}</vCores>
-            <replicas>${replicas}</replicas>
+						<!-- Resource allocation -->
+						<vCores>${vcores}</vCores>
+						<replicas>${replicas}</replicas>
 
-            <!-- Application properties (injected at deploy time) -->
-            <properties>
-                <env>${anypoint.env}</env>
-                <secure.properties>db.password,api.secret</secure.properties>
-            </properties>
+						<!-- Application properties (injected at deploy time) -->
+						<properties>
+							<env>${anypoint.env}</env>
+							<secure.properties>db.password,api.secret</secure.properties>
+						</properties>
 
-            <!-- Deployment strategy: rolling (zero-downtime) or recreate -->
-            <deploymentModel>rolling</deploymentModel>
+						<!-- Deployment strategy: rolling (zero-downtime) or recreate -->
+						<deploymentModel>rolling</deploymentModel>
 
-            <!-- Enable persistent object store -->
-            <persistentObjectStore>false</persistentObjectStore>
+						<!-- Enable persistent object store -->
+						<persistentObjectStore>false</persistentObjectStore>
 
-            <!-- Disable last-mile security for internal services -->
-            <lastMileSecurity>false</lastMileSecurity>
-        </cloudHub2Deployment>
-    </configuration>
-</plugin>
+						<!-- Disable last-mile security for internal services -->
+						<lastMileSecurity>false</lastMileSecurity>
+					</cloudHub2Deployment>
+				</configuration>
+			</plugin>
 		</plugins>
 	</build>
 
@@ -118,13 +118,6 @@
 			<groupId>org.mule.connectors</groupId>
 			<artifactId>mule-vm-connector</artifactId>
 			<version>2.0.4</version>
-			<classifier>mule-plugin</classifier>
-		</dependency>
-
-		<dependency>
-			<groupId>org.mule.module</groupId>
-			<artifactId>mule-java-module</artifactId>
-			<version>2.0.8</version>
 			<classifier>mule-plugin</classifier>
 		</dependency>
 
