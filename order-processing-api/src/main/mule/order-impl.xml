@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
+      xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/vm    http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+          http://www.mulesoft.org/schema/mule/java  http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+    <flow name="health-check-impl-flow" doc:name="Health Check Implementation">
+        <java:invoke-static class="com.mulesoft.interview.OrderUtils"
+                            method="getCurrentTimestamp()" target="ts"/>
+        <set-payload mimeType="application/json"
+                     value="#[%dw 2.0 output application/json ---
+{ status: 'UP', app: 'Order Processing API', version: '1.0.0', timestamp: vars.ts,
+  endpoints: {
+    createOrder: 'POST /api/v1/orders', listOrders: 'GET /api/v1/orders',
+    getOrder: 'GET /api/v1/orders/{orderId}', updateOrder: 'PUT /api/v1/orders/{orderId}',
+    deleteOrder: 'DELETE /api/v1/orders/{orderId}', stats: 'GET /api/v1/orders/stats'
+  }
+}]"/>
+    </flow>
+
+    <flow name="create-order-impl-flow" doc:name="Create Order Implementation">
+        <set-variable variableName="correlationId"
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
+        <logger level="INFO" message='[CREATE] START correlationId=#[vars.correlationId]'/>
+
+        <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                            method="validate(Map)" target="validationResult">
+            <java:args>#[{ orderData: payload }]</java:args>
+        </java:invoke-static>
+        <choice doc:name="Validation Gate">
+            <when expression="#[vars.validationResult.valid == false]">
+                <raise-error type="APP:VALIDATION"
+                             description="#[vars.validationResult.errors joinBy ', ']"/>
+            </when>
+            <otherwise>
+                <logger level="DEBUG" message="[VALIDATE] Order passed all business rule checks"/>
+            </otherwise>
+        </choice>
+
+        <java:invoke-static class="com.mulesoft.interview.OrderValidator"
+                            method="generateOrderId()" target="orderId"/>
+        <set-variable variableName="originalRequest" value="#[payload]"/>
+
+        <scatter-gather doc:name="Parallel Enrichment and Audit" timeout="8000">
+            <route>
+                <try>
+                    <flow-ref name="customer-enrichment-subflow"/>
+                    <error-handler>
+                        <on-error-continue type="ANY">
+                            <logger level="WARN" message='[CREATE] Enrichment failed: #[error.description]'/>
+                            <set-payload mimeType="application/json"
+                                         value="#[output application/json --- { id: (vars.originalRequest.customerId default '?'), name: 'Customer ' ++ (vars.originalRequest.customerId as String default '?'), email: 'N/A', enriched: false }]"/>
+                        </on-error-continue>
+                    </error-handler>
+                </try>
+            </route>
+            <route>
+                <java:invoke-static class="com.mulesoft.interview.OrderUtils"
+                                    method="buildAuditEntry(String, String, String)">
+                    <java:args>#[{ orderId: vars.orderId, action: 'CREATE', performedBy: (attributes.headers['X-User-ID'] default 'api-client') }]</java:args>
+                </java:invoke-static>
+            </route>
+        </scatter-gather>
+
+        <set-variable variableName="customerData" value="#[payload[0] default {}]"/>
+        <set-variable variableName="auditEntry"   value="#[payload[1] default {}]"/>
+        <set-payload value="#[vars.originalRequest]"/>
+
+        <set-variable variableName="orderData"
+                      value="#[%dw 2.0 output application/java ---
+{
+    orderId:         vars.orderId,
+    customerId:      payload.customerId,
+    customerName:    (vars.customerData.name  default 'Unknown'),
+    customerEmail:   (vars.customerData.email default 'N/A'),
+    items:           payload.items,
+    totalAmount:     vars.validationResult.parsedAmount,
+    priority:        vars.validationResult.priority,
+    status:          'PENDING',
+    shippingAddress: (payload.shippingAddress default null),
+    notes:           (payload.notes default null),
+    createdAt:       now() as String { format: &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot; },
+    updatedAt:       now() as String { format: &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot; },
+    correlationId:   vars.correlationId,
+    auditTrail:      [ vars.auditEntry ]
+}]"/>
+
+        <choice doc:name="Priority Router">
+            <when expression="#[vars.orderData.priority == 'PRIORITY']">
+                <logger level="INFO" message='[PRIORITY] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
+                <set-variable variableName="processingLane" value="PRIORITY_LANE"/>
+            </when>
+            <when expression="#[vars.orderData.priority == 'EXPRESS']">
+                <logger level="INFO" message='[EXPRESS] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
+                <set-variable variableName="processingLane" value="EXPRESS_LANE"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" message='[STANDARD] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
+                <set-variable variableName="processingLane" value="STANDARD_LANE"/>
+            </otherwise>
+        </choice>
+
+        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                            method="save(String, Map)" target="savedOrder">
+            <java:args>#[{ orderId: vars.orderId, order: vars.orderData }]</java:args>
+        </java:invoke-static>
+
+        <async doc:name="Async VM Notification">
+            <try>
+                <vm:publish config-ref="order-notifications-vm-config"
+                            queueName="${order.notification.queue-name}">
+                    <vm:content>#[output application/json --- { event: 'ORDER_CREATED', orderId: vars.orderId, priority: vars.orderData.priority, lane: vars.processingLane }]</vm:content>
+                </vm:publish>
+                <error-handler>
+                    <on-error-continue type="ANY">
+                        <logger level="WARN" message='[NOTIFY] Publish failed: #[error.description]'/>
+                    </on-error-continue>
+                </error-handler>
+            </try>
+        </async>
+
+        <set-payload mimeType="application/json"
+                     value="#[%dw 2.0 output application/json ---
+{
+    orderId:        vars.orderData.orderId,
+    status:         vars.orderData.status,
+    priority:       vars.orderData.priority,
+    processingLane: vars.processingLane,
+    totalAmount:    vars.orderData.totalAmount,
+    customerName:   vars.orderData.customerName,
+    itemCount:      sizeOf(vars.orderData.items),
+    createdAt:      vars.orderData.createdAt,
+    correlationId:  vars.correlationId,
+    links: { self: '/api/v1/orders/' ++ vars.orderId, stats: '/api/v1/orders/stats' }
+}]"/>
+
+        <logger level="INFO" message='[CREATE] SUCCESS #[vars.orderId] priority=#[vars.orderData.priority]'/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="list-orders-impl-flow" doc:name="List Orders Implementation">
+        <set-variable variableName="correlationId"
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
+        <set-variable variableName="statusFilter"
+                      value="#[attributes.queryParams.status default null]"/>
+
+        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                            method="findAll()" target="allOrders"/>
+
+        <set-payload mimeType="application/json"
+                     value="#[%dw 2.0 output application/json
+var sp  = vars.statusFilter
+var raw = vars.allOrders default []
+var list = if (sp != null) raw filter ($.status == upper(sp)) else raw
+---
+{ total: sizeOf(list), filter: (sp default 'none'),
+  orders: list map (o) -> {
+    orderId: o.orderId, customerId: o.customerId,
+    customerName: (o.customerName default 'Unknown'),
+    status: o.status, priority: o.priority, totalAmount: o.totalAmount,
+    itemCount: sizeOf(o.items default []), createdAt: o.createdAt,
+    links: { self: '/api/v1/orders/' ++ o.orderId }
+}}]"/>
+
+        <logger level="INFO" message='[LIST] count=#[sizeOf(vars.allOrders default [])] filter=#[vars.statusFilter default "none"]'/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="get-order-impl-flow" doc:name="Get Order Implementation">
+        <set-variable variableName="correlationId"
+                      value="#[attributes.headers.'X-Correlation-ID' default uuid()]"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"/>
+
+        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
+                            method="findById(String)" target="foundOrder">
+            <java:args>#[{ orderId: vars.orderId }]</java:args>
+        </java:invoke-static>
+
+        <choice doc:name="Order Exists?">
+            <when expression="#[vars.foundOrder == null]">
+                <raise-error type="APP:NOT_FOUND"
+                             description="#['Order not found: ' ++ vars.orderId]"/>
+            </when>
+            <otherwise>
+                <logger level="DEBUG" message="[GET] Order found: #[vars.orderId]"/>
+            </otherwise>
+        </choice>
+
+        <set-payload mimeType="application/json"
+                     value="#[%dw 2.0 output application/json var o = vars.foundOrder ---
+{
+    orderId: o.orderId, customerId: o.customerId,
+    customerName: (o.customerName default 'Unknown'),
+    customerEmail: (o.customerEmail default 'N/A'),
+    status: o.status, priority: o.priority, totalAmount: o.totalAmount,
+    itemCount: sizeOf(o.items default []), items: (o.items default []),
+    shippingAddress: (o.shippingAddress default null),
+    notes: (o.notes default null),
+    createdAt: o.createdAt, updatedAt: o.updatedAt,
+    auditTrail: (o.auditTrail default []),
+    links: { self: '/api/v1/orders/' ++ o.orderId, update: '/api/v1/orders/' ++ o.orderId }
+}]"/>
+
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+</mule>

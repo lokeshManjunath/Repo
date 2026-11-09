@@ -1,0 +1,140 @@
+#%RAML 1.0 DataType
+displayName: OrderResponse
+description: Full order representation returned by GET/POST/PUT /orders endpoints.
+
+type: object
+properties:
+  orderId:
+    type: string
+    description: Unique order identifier in format ORD-{timestamp}-{random4digits}
+    example: "ORD-1731058800000-4521"
+  customerId:
+    type: string
+    description: ID of the customer who placed the order
+    example: "CUST-001"
+  status:
+    type: string
+    enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+    description: Current order status
+    example: "PENDING"
+  items:
+    type: array
+    items: !include OrderItem.raml
+    description: Line-items in the order
+  totalAmount:
+    type: number
+    description: Total order value in USD
+    example: 50.00
+  shippingAddress:
+    type: !include ShippingAddress.raml
+    required: false
+    description: Delivery address
+  notes:
+    type: string
+    required: false
+    description: Special instructions or notes
+    example: "Please leave at the door"
+  priority:
+    type: string
+    required: false
+    enum: [STANDARD, EXPRESS, BULK]
+    description: Processing priority assigned by the system
+    example: "STANDARD"
+  processingLane:
+    type: string
+    required: false
+    description: Internal processing lane (standard/express/bulk/international)
+    example: "standard"
+  customerData:
+    type: object
+    required: false
+    description: Enriched customer data from CRM
+    properties:
+      name:
+        type: string
+        required: false
+        example: "John Doe"
+      email:
+        type: string
+        required: false
+        example: "john.doe@example.com"
+      tier:
+        type: string
+        required: false
+        example: "GOLD"
+  audit:
+    type: object
+    required: false
+    description: Audit trail entry for this order
+    properties:
+      createdBy:
+        type: string
+        required: false
+        example: "system"
+      timestamp:
+        type: string
+        required: false
+        example: "2026-11-09T09:00:00Z"
+  createdAt:
+    type: datetime
+    description: Timestamp when the order was created
+    example: "2026-11-09T09:00:00.000Z"
+  updatedAt:
+    type: datetime
+    description: Timestamp when the order was last updated
+    example: "2026-11-09T09:00:00.000Z"
+  links:
+    type: object
+    required: false
+    description: HATEOAS navigation links
+    properties:
+      self:
+        type: object
+        required: false
+        properties:
+          href:
+            type: string
+            example: "/api/v1/orders/ORD-1731058800000-4521"
+      update:
+        type: object
+        required: false
+        properties:
+          href:
+            type: string
+            example: "/api/v1/orders/ORD-1731058800000-4521"
+      delete:
+        type: object
+        required: false
+        properties:
+          href:
+            type: string
+            example: "/api/v1/orders/ORD-1731058800000-4521"
+
+example:
+  orderId: "ORD-1731058800000-4521"
+  customerId: "CUST-001"
+  status: "PENDING"
+  items:
+    - productId: "PROD-101"
+      name: "Widget Pro"
+      quantity: 2
+      unitPrice: 25.00
+  totalAmount: 50.00
+  shippingAddress:
+    street: "123 Main Street"
+    city: "New York"
+    state: "NY"
+    postalCode: "10001"
+    country: "US"
+  notes: "Please leave at the door"
+  priority: "STANDARD"
+  processingLane: "standard"
+  createdAt: "2026-11-09T09:00:00.000Z"
+  updatedAt: "2026-11-09T09:00:00.000Z"
+  links:
+    self:
+      href: "/api/v1/orders/ORD-1731058800000-4521"
+    update:
+      href: "/api/v1/orders/ORD-1731058800000-4521"
+    delete:
+      href: "/api/v1/orders/ORD-1731058800000-4521"

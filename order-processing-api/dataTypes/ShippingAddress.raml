@@ -1,0 +1,35 @@
+#%RAML 1.0 DataType
+displayName: ShippingAddress
+description: Delivery address for an order.
+
+type: object
+properties:
+  street:
+    type: string
+    description: Street address including house/apartment number
+    example: "123 Main Street"
+  city:
+    type: string
+    description: City name
+    example: "New York"
+  state:
+    type: string
+    required: false
+    description: State or province code (optional)
+    example: "NY"
+  postalCode:
+    type: string
+    required: false
+    description: ZIP or postal code (optional)
+    example: "10001"
+  country:
+    type: string
+    description: ISO 3166-1 alpha-2 country code
+    example: "US"
+
+example:
+  street: "123 Main Street"
+  city: "New York"
+  state: "NY"
+  postalCode: "10001"
+  country: "US"

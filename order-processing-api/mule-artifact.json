@@ -1,0 +1,9 @@
+{
+    "name": "order-processing-api",
+    "classLoaderModelLoaderDescriptor": {
+        "attributes": {"exportedPackages": ["com.mulesoft.interview"]},
+        "id": "mule"
+    },
+    "minMuleVersion": "4.10.0",
+    "javaSpecificationVersions": ["17"]
+}

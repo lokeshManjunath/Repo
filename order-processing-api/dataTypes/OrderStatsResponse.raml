@@ -1,0 +1,52 @@
+#%RAML 1.0 DataType
+displayName: OrderStatsResponse
+description: Aggregate order statistics returned by GET /orders/stats.
+
+type: object
+properties:
+  totalOrders:
+    type: integer
+    description: Total number of orders in the system
+    example: 150
+  byStatus:
+    type: object
+    description: Order counts broken down by each status
+    properties:
+      pending:
+        type: integer
+        example: 25
+      confirmed:
+        type: integer
+        example: 30
+      processing:
+        type: integer
+        example: 20
+      shipped:
+        type: integer
+        example: 35
+      delivered:
+        type: integer
+        example: 38
+      cancelled:
+        type: integer
+        example: 2
+  totalRevenue:
+    type: number
+    description: Sum of totalAmount for all non-cancelled orders (USD)
+    example: 12850.75
+  averageOrderValue:
+    type: number
+    description: Mean order value across all non-cancelled orders (USD)
+    example: 87.42
+
+example:
+  totalOrders: 150
+  byStatus:
+    pending: 25
+    confirmed: 30
+    processing: 20
+    shipped: 35
+    delivered: 38
+    cancelled: 2
+  totalRevenue: 12850.75
+  averageOrderValue: 87.42

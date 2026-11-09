@@ -1,0 +1,950 @@
+{
+  "info": {
+    "name": "Order Processing API",
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "description": "Complete test suite for the MuleSoft 4 Order Processing API.\n\nSetup:\n1. Start the Mule application (port 8081)\n2. Import this collection\n3. Run the requests in order — the 'Create Standard Order' request automatically saves the orderId for subsequent requests\n\nBase URL: http://localhost:8081/api/v1",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081/api/v1",
+      "type": "string",
+      "description": "Base URL of the Order Processing API"
+    },
+    {
+      "key": "orderId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated by Create Standard Order request"
+    },
+    {
+      "key": "priorityOrderId",
+      "value": "",
+      "type": "string",
+      "description": "Auto-populated by Create Priority Order request"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "GET /health — Application Status",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has status UP', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.status).to.eql('UP');",
+                  "});",
+                  "",
+                  "pm.test('Application name is correct', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.app).to.eql('Order Processing API');",
+                  "});",
+                  "",
+                  "pm.test('Timestamp is present', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.timestamp).to.be.a('string');",
+                  "    pm.expect(json.timestamp.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('Endpoints catalog is present', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.endpoints).to.be.an('object');",
+                  "    pm.expect(json.endpoints.createOrder).to.include('/api/v1/orders');",
+                  "});",
+                  "",
+                  "console.log('Health check passed — API is UP');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            },
+            "description": "Verifies the application is running. Returns status UP with endpoint catalog."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Create",
+      "item": [
+        {
+          "name": "POST /orders — Create STANDARD Order ($50)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Response has orderId', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.orderId).to.be.a('string');",
+                  "    pm.expect(json.orderId).to.include('ORD-');",
+                  "    pm.collectionVariables.set('orderId', json.orderId);",
+                  "    console.log('Saved orderId: ' + json.orderId);",
+                  "});",
+                  "",
+                  "pm.test('Status is PENDING', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('PENDING');",
+                  "});",
+                  "",
+                  "pm.test('Priority is STANDARD (amount < $1,000)', function() {",
+                  "    pm.expect(pm.response.json().priority).to.eql('STANDARD');",
+                  "});",
+                  "",
+                  "pm.test('Processing lane is STANDARD_LANE', function() {",
+                  "    pm.expect(pm.response.json().processingLane).to.eql('STANDARD_LANE');",
+                  "});",
+                  "",
+                  "pm.test('Total amount is 50.0', function() {",
+                  "    pm.expect(pm.response.json().totalAmount).to.eql(50.0);",
+                  "});",
+                  "",
+                  "pm.test('Item count is 1', function() {",
+                  "    pm.expect(pm.response.json().itemCount).to.eql(1);",
+                  "});",
+                  "",
+                  "pm.test('Customer name enriched from JSONPlaceholder', function() {",
+                  "    var customerName = pm.response.json().customerName;",
+                  "    pm.expect(customerName).to.be.a('string');",
+                  "    pm.expect(customerName.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('HATEOAS links present', function() {",
+                  "    var links = pm.response.json().links;",
+                  "    pm.expect(links).to.have.property('self');",
+                  "    pm.expect(links.self).to.include('/api/v1/orders/');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Correlation-ID", "value": "postman-std-001" },
+              { "key": "X-User-ID", "value": "postman-tester" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"1\",\n  \"items\": [\n    {\n      \"productId\": \"PROD-101\",\n      \"name\": \"Widget Pro\",\n      \"quantity\": 2,\n      \"unitPrice\": 25.00\n    }\n  ],\n  \"totalAmount\": 50.00,\n  \"shippingAddress\": {\n    \"street\": \"123 Main Street\",\n    \"city\": \"New York\",\n    \"country\": \"US\",\n    \"zipCode\": \"10001\"\n  },\n  \"notes\": \"Standard order — created via Postman\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Creates a STANDARD priority order ($50). The orderId is automatically saved to the {{orderId}} collection variable for use in subsequent requests."
+          }
+        },
+        {
+          "name": "POST /orders — Create EXPRESS Order ($1,500)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Priority is EXPRESS ($1,000-$9,999)', function() {",
+                  "    pm.expect(pm.response.json().priority).to.eql('EXPRESS');",
+                  "});",
+                  "",
+                  "pm.test('Processing lane is EXPRESS_LANE', function() {",
+                  "    pm.expect(pm.response.json().processingLane).to.eql('EXPRESS_LANE');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Correlation-ID", "value": "postman-exp-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"3\",\n  \"items\": [\n    {\n      \"productId\": \"PROD-300\",\n      \"name\": \"Premium Suite\",\n      \"quantity\": 1,\n      \"unitPrice\": 1500.00\n    }\n  ],\n  \"totalAmount\": 1500.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Creates an EXPRESS priority order ($1,500). Priority is determined by totalAmount >= $1,000."
+          }
+        },
+        {
+          "name": "POST /orders — Create PRIORITY Order ($15,000)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 201 Created', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Priority is PRIORITY (>= $10,000)', function() {",
+                  "    pm.expect(pm.response.json().priority).to.eql('PRIORITY');",
+                  "});",
+                  "",
+                  "pm.test('Processing lane is PRIORITY_LANE', function() {",
+                  "    pm.expect(pm.response.json().processingLane).to.eql('PRIORITY_LANE');",
+                  "});",
+                  "",
+                  "pm.collectionVariables.set('priorityOrderId', pm.response.json().orderId);",
+                  "console.log('Priority orderId: ' + pm.response.json().orderId);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Correlation-ID", "value": "postman-pri-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"5\",\n  \"items\": [\n    {\n      \"productId\": \"ENT-LICENSE\",\n      \"name\": \"Enterprise License\",\n      \"quantity\": 1,\n      \"unitPrice\": 15000.00\n    }\n  ],\n  \"totalAmount\": 15000.00\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Creates a PRIORITY order ($15,000). Triggers VIP handling lane."
+          }
+        },
+        {
+          "name": "POST /orders — 400 Missing customerId",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 400 Bad Request', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Error code is VALIDATION_ERROR', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR');",
+                  "});",
+                  "",
+                  "pm.test('Error message mentions customerId', function() {",
+                  "    var message = pm.response.json().error.message;",
+                  "    pm.expect(message.toLowerCase()).to.include('customerid');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"productId\": \"P1\", \"name\": \"Widget\", \"quantity\": 1, \"unitPrice\": 10.0 }\n  ],\n  \"totalAmount\": 10.0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Tests validation: missing customerId should return 400 with VALIDATION_ERROR."
+          }
+        },
+        {
+          "name": "POST /orders — 400 Empty Items Array",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 400 Bad Request', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Error code is VALIDATION_ERROR', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"1\",\n  \"items\": [],\n  \"totalAmount\": 0.0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Tests validation: empty items array should return 400."
+          }
+        },
+        {
+          "name": "POST /orders — 400 Amount Exceeds Maximum",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 400 Bad Request', function() {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test('Error mentions maximum limit', function() {",
+                  "    var message = pm.response.json().error.message;",
+                  "    pm.expect(message).to.include('maximum');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"1\",\n  \"items\": [{ \"productId\": \"P1\", \"name\": \"Item\", \"quantity\": 1, \"unitPrice\": 999999.0 }],\n  \"totalAmount\": 999999.0\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Tests validation: totalAmount > $100,000 should return 400."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Read",
+      "item": [
+        {
+          "name": "GET /orders — List All Orders",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Response has total field', function() {",
+                  "    pm.expect(pm.response.json().total).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test('Response has orders array', function() {",
+                  "    pm.expect(pm.response.json().orders).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('Total matches orders array length', function() {",
+                  "    var json = pm.response.json();",
+                  "    pm.expect(json.total).to.eql(json.orders.length);",
+                  "});",
+                  "",
+                  "pm.test('Filter is none (no filter applied)', function() {",
+                  "    pm.expect(pm.response.json().filter).to.eql('none');",
+                  "});",
+                  "",
+                  "console.log('Total orders in store: ' + pm.response.json().total);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"]
+            },
+            "description": "Returns all orders without filtering."
+          }
+        },
+        {
+          "name": "GET /orders?status=PENDING — List with Filter",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Applied filter is PENDING', function() {",
+                  "    pm.expect(pm.response.json().filter.toUpperCase()).to.eql('PENDING');",
+                  "});",
+                  "",
+                  "pm.test('All returned orders have PENDING status', function() {",
+                  "    var orders = pm.response.json().orders;",
+                  "    orders.forEach(function(order) {",
+                  "        pm.expect(order.status).to.eql('PENDING');",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders?status=PENDING",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders"],
+              "query": [
+                { "key": "status", "value": "PENDING" }
+              ]
+            },
+            "description": "Returns only PENDING orders. Filter is case-insensitive (pending, PENDING both work)."
+          }
+        },
+        {
+          "name": "GET /orders/:orderId — Get by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Order ID matches requested ID', function() {",
+                  "    pm.expect(pm.response.json().orderId).to.eql(pm.collectionVariables.get('orderId'));",
+                  "});",
+                  "",
+                  "pm.test('Status is PENDING', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('PENDING');",
+                  "});",
+                  "",
+                  "pm.test('Items array is present', function() {",
+                  "    pm.expect(pm.response.json().items).to.be.an('array');",
+                  "    pm.expect(pm.response.json().items.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('Audit trail is present', function() {",
+                  "    pm.expect(pm.response.json().auditTrail).to.be.an('array');",
+                  "    pm.expect(pm.response.json().auditTrail.length).to.be.greaterThan(0);",
+                  "});",
+                  "",
+                  "pm.test('HATEOAS links present', function() {",
+                  "    pm.expect(pm.response.json().links).to.have.property('self');",
+                  "    pm.expect(pm.response.json().links).to.have.property('update');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Retrieves full order detail using the orderId saved from Create Standard Order."
+          }
+        },
+        {
+          "name": "GET /orders/:orderId — 404 Not Found",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 404 Not Found', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Error code is NOT_FOUND', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND');",
+                  "});",
+                  "",
+                  "pm.test('Error message mentions the order ID', function() {",
+                  "    pm.expect(pm.response.json().error.message).to.include('ORD-DOES-NOT-EXIST');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/ORD-DOES-NOT-EXIST",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "ORD-DOES-NOT-EXIST"]
+            },
+            "description": "Tests 404 error handling for a non-existent order ID."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Update (State Machine)",
+      "item": [
+        {
+          "name": "PUT /orders/:orderId — PENDING → CONFIRMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status updated to CONFIRMED', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('CONFIRMED');",
+                  "});",
+                  "",
+                  "pm.test('Audit trail has 2 entries (CREATE + UPDATE)', function() {",
+                  "    pm.expect(pm.response.json().auditEntries).to.eql(2);",
+                  "});",
+                  "",
+                  "pm.test('Updated timestamp is present', function() {",
+                  "    pm.expect(pm.response.json().updatedAt).to.be.a('string');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-User-ID", "value": "billing-team" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\",\n  \"notes\": \"Payment received and verified\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Advances order from PENDING to CONFIRMED. Valid state-machine transition."
+          }
+        },
+        {
+          "name": "PUT /orders/:orderId — CONFIRMED → PROCESSING",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status updated to PROCESSING', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('PROCESSING');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PROCESSING\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Advances order from CONFIRMED to PROCESSING."
+          }
+        },
+        {
+          "name": "PUT /orders/:orderId — PROCESSING → SHIPPED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status updated to SHIPPED', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('SHIPPED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SHIPPED\",\n  \"notes\": \"Dispatched via courier XYZ — tracking #TR123456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Advances order from PROCESSING to SHIPPED."
+          }
+        },
+        {
+          "name": "PUT /orders/:orderId — 409 Invalid Transition (SHIPPED → PENDING)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 409 Conflict', function() {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test('Error code is CONFLICT', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('CONFLICT');",
+                  "});",
+                  "",
+                  "pm.test('Error message shows invalid transition', function() {",
+                  "    pm.expect(pm.response.json().error.message).to.include('SHIPPED');",
+                  "    pm.expect(pm.response.json().error.message).to.include('PENDING');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PENDING\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Tests state machine enforcement: SHIPPED → PENDING is not allowed and should return 409 Conflict."
+          }
+        },
+        {
+          "name": "PUT /orders/:orderId — SHIPPED → DELIVERED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status updated to DELIVERED (terminal state)', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('DELIVERED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DELIVERED\",\n  \"notes\": \"Delivered and signed by customer\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Advances order to DELIVERED (terminal state — no further transitions allowed)."
+          }
+        },
+        {
+          "name": "PUT /priorityOrderId — Cancel PRIORITY Order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Status updated to CANCELLED', function() {",
+                  "    pm.expect(pm.response.json().status).to.eql('CANCELLED');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CANCELLED\",\n  \"notes\": \"Customer cancelled the order\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{priorityOrderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{priorityOrderId}}"]
+            },
+            "description": "Cancels the priority order. PENDING → CANCELLED is a valid transition."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Statistics",
+      "item": [
+        {
+          "name": "GET /orders/stats — Order Metrics",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 200 OK', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Summary object is present', function() {",
+                  "    pm.expect(pm.response.json().summary).to.be.an('object');",
+                  "});",
+                  "",
+                  "pm.test('totalOrders is a number', function() {",
+                  "    pm.expect(pm.response.json().summary.totalOrders).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test('totalRevenue is a number', function() {",
+                  "    pm.expect(pm.response.json().summary.totalRevenue).to.be.a('number');",
+                  "});",
+                  "",
+                  "pm.test('byStatus has all 6 status keys', function() {",
+                  "    var byStatus = pm.response.json().byStatus;",
+                  "    pm.expect(byStatus).to.have.property('PENDING');",
+                  "    pm.expect(byStatus).to.have.property('CONFIRMED');",
+                  "    pm.expect(byStatus).to.have.property('PROCESSING');",
+                  "    pm.expect(byStatus).to.have.property('SHIPPED');",
+                  "    pm.expect(byStatus).to.have.property('DELIVERED');",
+                  "    pm.expect(byStatus).to.have.property('CANCELLED');",
+                  "});",
+                  "",
+                  "pm.test('Navigation links present', function() {",
+                  "    pm.expect(pm.response.json().links).to.have.property('orders');",
+                  "    pm.expect(pm.response.json().links).to.have.property('health');",
+                  "});",
+                  "",
+                  "console.log('Stats: ' + JSON.stringify(pm.response.json().summary));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "stats"]
+            },
+            "description": "Returns aggregate metrics: order counts by status, total revenue (excluding CANCELLED), and average order value."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders — Delete",
+      "item": [
+        {
+          "name": "DELETE /orders/:orderId — Cancel Express Order",
+          "event": [
+            {
+              "listen": "pre-request",
+              "script": {
+                "exec": [
+                  "console.log('Note: This request requires an EXPRESS order to exist.');",
+                  "console.log('Run Create EXPRESS Order first if this fails with 404.');"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 204 No Content', function() {",
+                  "    pm.response.to.have.status(204);",
+                  "});",
+                  "",
+                  "pm.test('Response body is empty', function() {",
+                  "    pm.expect(pm.response.text()).to.be.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Deletes an order. Returns 204 No Content (empty body) on success."
+          }
+        },
+        {
+          "name": "GET /orders/:orderId — Verify 404 After Delete",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 404 (order was deleted)', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Error code is NOT_FOUND', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/orders/{{orderId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "{{orderId}}"]
+            },
+            "description": "Confirms that the deleted order returns 404 — verifies the delete operation worked."
+          }
+        },
+        {
+          "name": "DELETE /orders/:orderId — 404 Non-Existent",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status code is 404 Not Found', function() {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "pm.test('Error code is NOT_FOUND', function() {",
+                  "    pm.expect(pm.response.json().error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/orders/ORD-GHOST-ORDER-000",
+              "host": ["{{baseUrl}}"],
+              "path": ["orders", "ORD-GHOST-ORDER-000"]
+            },
+            "description": "Tests 404 handling when trying to delete a non-existent order."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+          http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http  http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+
+    <flow name="route-get-health" doc:name="GET /api/v1/health">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/health" allowedMethods="GET">
+            <http:response statusCode="#[vars.httpStatus default 200]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="health-check-impl-flow"/>
+    </flow>
+
+    <flow name="route-get-orders" doc:name="GET /api/v1/orders">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders" allowedMethods="GET">
+            <http:response statusCode="#[vars.httpStatus default 200]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="list-orders-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="route-post-orders" doc:name="POST /api/v1/orders">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders" allowedMethods="POST">
+            <http:response statusCode="#[vars.httpStatus default 201]" reasonPhrase="Created">
+                <http:headers>#[{ 'Content-Type': 'application/json',
+                                   'X-Correlation-ID': (vars.correlationId default '') }]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="create-order-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="route-get-orders-stats" doc:name="GET /api/v1/orders/stats">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders/stats" allowedMethods="GET">
+            <http:response statusCode="#[vars.httpStatus default 200]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="order-stats-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="route-get-order-by-id" doc:name="GET /api/v1/orders/{orderId}">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders/{orderId}" allowedMethods="GET">
+            <http:response statusCode="#[vars.httpStatus default 200]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="get-order-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="route-put-order-by-id" doc:name="PUT /api/v1/orders/{orderId}">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders/{orderId}" allowedMethods="PUT">
+            <http:response statusCode="#[vars.httpStatus default 200]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="update-order-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+    <flow name="route-delete-order-by-id" doc:name="DELETE /api/v1/orders/{orderId}">
+        <http:listener config-ref="api-http-listener-config"
+                       path="/api/v1/orders/{orderId}" allowedMethods="DELETE">
+            <http:response statusCode="#[vars.httpStatus default 204]"/>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[{ 'Content-Type': 'application/json' }]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <flow-ref name="delete-order-impl-flow"/>
+        <error-handler ref="global-error-handler"/>
+    </flow>
+
+</mule>

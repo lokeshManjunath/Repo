@@ -1,0 +1,30 @@
+#%RAML 1.0 DataType
+displayName: OrderItem
+description: A single line-item within an order.
+
+type: object
+properties:
+  productId:
+    type: string
+    description: Unique product identifier (SKU or catalogue ID)
+    example: "PROD-101"
+  name:
+    type: string
+    description: Product display name
+    example: "Widget Pro"
+  quantity:
+    type: integer
+    minimum: 1
+    description: Number of units ordered
+    example: 2
+  unitPrice:
+    type: number
+    minimum: 0.01
+    description: Price per unit in USD
+    example: 25.00
+
+example:
+  productId: "PROD-101"
+  name: "Widget Pro"
+  quantity: 2
+  unitPrice: 25.00

@@ -1,0 +1,23 @@
+#%RAML 1.0 DataType
+displayName: ErrorResponse
+description: Standard error response returned on 4xx/5xx failures.
+
+type: object
+properties:
+  code:
+    type: string
+    description: Application-specific error code
+    example: "ORDER_NOT_FOUND"
+  message:
+    type: string
+    description: Human-readable description of the error
+    example: "Order with ID ORD-1731058800000-4521 was not found"
+  timestamp:
+    type: datetime
+    description: Timestamp when the error occurred
+    example: "2026-11-09T09:00:00.000Z"
+
+example:
+  code: "ORDER_NOT_FOUND"
+  message: "Order with ID ORD-1731058800000-4521 was not found"
+  timestamp: "2026-11-09T09:00:00.000Z"

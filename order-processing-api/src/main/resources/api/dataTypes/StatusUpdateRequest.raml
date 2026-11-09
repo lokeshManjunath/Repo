@@ -1,0 +1,30 @@
+#%RAML 1.0 DataType
+displayName: StatusUpdateRequest
+description: |
+  Request payload for updating an order's status.
+  Sent as the body of PUT /orders/{orderId}.
+
+  The following state-machine transitions are permitted:
+    PENDING    → CONFIRMED | CANCELLED
+    CONFIRMED  → PROCESSING | CANCELLED
+    PROCESSING → SHIPPED    | CANCELLED
+    SHIPPED    → DELIVERED
+    DELIVERED  → (terminal — no further transitions)
+    CANCELLED  → (terminal — no further transitions)
+
+type: object
+properties:
+  status:
+    type: string
+    enum: [CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+    description: Target status to transition to (state-machine rules enforced server-side)
+    example: "CONFIRMED"
+  notes:
+    type: string
+    required: false
+    description: Optional notes explaining the reason for the status change
+    example: "Payment received — confirmed by billing team"
+
+example:
+  status: "CONFIRMED"
+  notes: "Payment received — confirmed by billing team"

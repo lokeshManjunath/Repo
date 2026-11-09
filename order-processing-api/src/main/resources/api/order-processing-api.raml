@@ -1,0 +1,148 @@
+#%RAML 1.0
+title: Order Processing API
+version: v1
+baseUri: http://localhost:8081/api/{version}
+mediaType: application/json
+
+description: |
+  Original MuleSoft 4 Interview Demonstration Application.
+  Demonstrates API-led connectivity, process orchestration,
+  Java components, DataWeave transformations, and error handling.
+
+types:
+  OrderItem:           !include dataTypes/OrderItem.raml
+  ShippingAddress:     !include dataTypes/ShippingAddress.raml
+  OrderRequest:        !include dataTypes/OrderRequest.raml
+  StatusUpdateRequest: !include dataTypes/StatusUpdateRequest.raml
+  OrderResponse:       !include dataTypes/OrderResponse.raml
+  OrderListResponse:   !include dataTypes/OrderListResponse.raml
+  OrderStatsResponse:  !include dataTypes/OrderStatsResponse.raml
+  ErrorResponse:       !include dataTypes/ErrorResponse.raml
+
+/health:
+  description: API health check endpoint for monitoring and load balancers
+  get:
+    description: Returns the application health status and available endpoints
+    responses:
+      200:
+        description: Application is healthy
+        body:
+          application/json:
+            example:
+              status: "UP"
+              app: "Order Processing API"
+              version: "1.0.0"
+
+/orders:
+  description: Order management resource
+
+  get:
+    description: Retrieves all orders. Supports optional status filtering via ?status= query parameter.
+    queryParameters:
+      status?:
+        type: string
+        enum: [PENDING, CONFIRMED, PROCESSING, SHIPPED, DELIVERED, CANCELLED]
+        description: Filter orders by status (case-insensitive). Omit to return all orders.
+    responses:
+      200:
+        description: List of orders returned successfully
+        body:
+          application/json:
+            type: OrderListResponse
+
+  post:
+    description: |
+      Creates a new order. The flow performs the following steps:
+        1. Validates business rules (Java component)
+        2. Generates a unique order ID
+        3. In parallel: enriches customer data from CRM + builds audit entry (Scatter-Gather)
+        4. Assigns processing priority and lane (Choice Router)
+        5. Persists the order
+        6. Publishes an async notification (VM queue, fire-and-forget)
+    body:
+      application/json:
+        type: OrderRequest
+    responses:
+      201:
+        description: Order created successfully
+        body:
+          application/json:
+            type: OrderResponse
+      400:
+        description: Validation error — missing or invalid fields
+        body:
+          application/json:
+            type: ErrorResponse
+
+  /stats:
+    description: Order aggregate statistics and metrics
+    get:
+      description: Returns order counts by status, revenue totals, and average order value.
+      responses:
+        200:
+          description: Statistics calculated successfully
+          body:
+            application/json:
+              type: OrderStatsResponse
+
+  /{orderId}:
+    description: Operations on a specific order identified by orderId
+    uriParameters:
+      orderId:
+        type: string
+        description: Unique order identifier in format ORD-{timestamp}-{random4digits}
+        example: "ORD-1731058800000-4521"
+
+    get:
+      description: Retrieves full order details including items, audit trail, and HATEOAS links.
+      responses:
+        200:
+          description: Order found and returned
+          body:
+            application/json:
+              type: OrderResponse
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
+
+    put:
+      description: |
+        Updates the order status. State-machine transitions are enforced server-side:
+          PENDING    → CONFIRMED | CANCELLED
+          CONFIRMED  → PROCESSING | CANCELLED
+          PROCESSING → SHIPPED    | CANCELLED
+          SHIPPED    → DELIVERED
+          DELIVERED  → (terminal)
+          CANCELLED  → (terminal)
+      body:
+        application/json:
+          type: StatusUpdateRequest
+      responses:
+        200:
+          description: Status updated successfully
+          body:
+            application/json:
+              type: OrderResponse
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
+        409:
+          description: Invalid status transition (state-machine violation)
+          body:
+            application/json:
+              type: ErrorResponse
+
+    delete:
+      description: Cancels and permanently removes an order.
+      responses:
+        204:
+          description: Order deleted successfully — no response body
+        404:
+          description: Order not found
+          body:
+            application/json:
+              type: ErrorResponse
