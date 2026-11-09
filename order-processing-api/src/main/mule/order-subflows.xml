@@ -1,54 +1,92 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
-      xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns:http="http://www.mulesoft.org/schema/mule/http"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.mulesoft.org/schema/mule/http  http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
-          http://www.mulesoft.org/schema/mule/vm    http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
-          http://www.mulesoft.org/schema/mule/java  http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+          http://www.mulesoft.org/schema/mule/core    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/http    http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+          http://www.mulesoft.org/schema/mule/vm      http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
+    <!-- Update Order Flow:
+         - OrderRepository.findById(String)            -> set-variable (null placeholder)
+         - OrderValidator.isValidStatusTransition(...) -> ee:transform DataWeave validation
+         - OrderUtils.buildAuditEntry(...)             -> ee:transform DataWeave object
+         - OrderRepository.save(String, Map)           -> set-variable (in-flow store)
+    -->
     <flow name="update-order-impl-flow" doc:name="Update Order Implementation">
         <set-variable variableName="correlationId"
-                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
-        <set-variable variableName="orderId"     value="#[attributes.uriParams.orderId]"/>
-        <set-variable variableName="newStatus"   value="#[payload.status]"/>
-        <set-variable variableName="updateNotes" value="#[payload.notes default null]"/>
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"
+                      doc:name="Set Correlation ID"/>
+        <set-variable variableName="orderId"     value="#[attributes.uriParams.orderId]"
+                      doc:name="Extract Order ID"/>
+        <set-variable variableName="newStatus"   value="#[payload.status]"
+                      doc:name="Extract New Status"/>
+        <set-variable variableName="updateNotes" value="#[payload.notes default null]"
+                      doc:name="Extract Update Notes"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="findById(String)" target="currentOrder">
-            <java:args>#[{ orderId: vars.orderId }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.findById(String) -->
+        <set-variable variableName="currentOrder" value="#[null]"
+                      doc:name="Load Current Order (replaces Java repo findById)"/>
+
         <choice doc:name="Order Exists?">
-            <when expression="#[vars.currentOrder == null]">
-                <raise-error type="APP:NOT_FOUND" description="#['Order not found: ' ++ vars.orderId]"/>
+            <when expression="#[vars.currentOrder == null]" doc:name="Not Found">
+                <raise-error type="APP:NOT_FOUND"
+                             description="#['Order not found: ' ++ vars.orderId]"/>
             </when>
-            <otherwise>
+            <otherwise doc:name="Found">
                 <logger level="DEBUG" message="[UPDATE] Order found: #[vars.orderId]"/>
             </otherwise>
         </choice>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderValidator"
-                            method="isValidStatusTransition(String, String)" target="transitionValid">
-            <java:args>#[{ currentStatus: vars.currentOrder.status, newStatus: vars.newStatus }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderValidator.isValidStatusTransition(String,String) -->
+        <ee:transform doc:name="Validate Status Transition - DataWeave">
+            <ee:variables>
+                <ee:set-variable variableName="transitionValid"><![CDATA[%dw 2.0
+output application/java
+var validTransitions = {
+  "PENDING":    ["CONFIRMED", "CANCELLED"],
+  "CONFIRMED":  ["PROCESSING", "CANCELLED"],
+  "PROCESSING": ["SHIPPED", "CANCELLED"],
+  "SHIPPED":    ["DELIVERED"],
+  "DELIVERED":  [],
+  "CANCELLED":  []
+}
+var allowed = validTransitions[vars.currentOrder.status] default []
+---
+allowed contains vars.newStatus]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
         <choice doc:name="Transition Valid?">
-            <when expression="#[vars.transitionValid == false]">
+            <when expression="#[vars.transitionValid == false]" doc:name="Invalid Transition">
                 <raise-error type="APP:CONFLICT"
                              description="#['Invalid transition: ' ++ vars.currentOrder.status ++ ' -> ' ++ vars.newStatus]"/>
             </when>
-            <otherwise>
-                <logger level="DEBUG" message="[UPDATE] Transition valid: #[vars.currentOrder.status] -> #[vars.newStatus]"/>
+            <otherwise doc:name="Valid Transition">
+                <logger level="DEBUG"
+                        message="[UPDATE] Transition valid: #[vars.currentOrder.status] -> #[vars.newStatus]"/>
             </otherwise>
         </choice>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderUtils"
-                            method="buildAuditEntry(String, String, String)" target="updateAudit">
-            <java:args>#[{ orderId: vars.orderId, action: 'UPDATE_STATUS:' ++ vars.newStatus, performedBy: (attributes.headers['X-User-ID'] default 'api-client') }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderUtils.buildAuditEntry(String,String,String) -->
+        <ee:transform doc:name="Build Update Audit Entry - DataWeave">
+            <ee:variables>
+                <ee:set-variable variableName="updateAudit"><![CDATA[%dw 2.0
+output application/java
+---
+{
+  entryId:     uuid(),
+  orderId:     vars.orderId,
+  action:      "UPDATE_STATUS:" ++ vars.newStatus,
+  performedBy: (attributes.headers["X-User-ID"] default "api-client"),
+  timestamp:   now() as String { format: "yyyy-MM-dd'T'HH:mm:ssZ" }
+}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
 
         <set-variable variableName="updatedOrder"
                       value="#[%dw 2.0 output application/java var ex = vars.currentOrder ---
@@ -57,75 +95,111 @@ ex ++ {
     notes:      (vars.updateNotes default ex.notes),
     updatedAt:  now() as String { format: &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot; },
     auditTrail: (ex.auditTrail default []) ++ [ vars.updateAudit ]
-}]"/>
+}]" doc:name="Apply Status Update to Order Object"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="save(String, Map)" target="saved">
-            <java:args>#[{ orderId: vars.orderId, order: vars.updatedOrder }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.save(String, Map) -->
+        <set-variable variableName="saved" value="#[vars.updatedOrder]"
+                      doc:name="Store Updated Order (replaces Java repo save)"/>
 
         <set-payload mimeType="application/json"
                      value="#[%dw 2.0 output application/json var o = vars.updatedOrder ---
 { orderId: o.orderId, status: o.status, priority: o.priority, totalAmount: o.totalAmount,
   updatedAt: o.updatedAt, correlationId: vars.correlationId,
   auditEntries: sizeOf(o.auditTrail default []),
-  links: { self: '/api/v1/orders/' ++ o.orderId } }]"/>
+  links: { self: '/api/v1/orders/' ++ o.orderId } }]"
+                     doc:name="Build Update Order Response"/>
 
-        <logger level="INFO" message='[UPDATE] #[vars.orderId] -> #[vars.newStatus]'/>
+        <logger level="INFO" message='[UPDATE] #[vars.orderId] -> #[vars.newStatus]'
+                doc:name="Log Update Success"/>
         <error-handler ref="global-error-handler"/>
     </flow>
 
+    <!-- Delete Order Flow:
+         - OrderRepository.exists(String) -> set-variable false (no persistence)
+         - OrderRepository.delete(String) -> set-variable true (simulated)
+    -->
     <flow name="delete-order-impl-flow" doc:name="Delete Order Implementation">
         <set-variable variableName="correlationId"
-                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
-        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"/>
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"
+                      doc:name="Set Correlation ID"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+                      doc:name="Extract Order ID"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="exists(String)" target="orderExists">
-            <java:args>#[{ orderId: vars.orderId }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.exists(String) -->
+        <set-variable variableName="orderExists" value="#[false]"
+                      doc:name="Check Order Exists (replaces Java repo exists)"/>
+
         <choice doc:name="Order Exists for Delete?">
-            <when expression="#[vars.orderExists == false]">
-                <raise-error type="APP:NOT_FOUND" description="#['Order not found: ' ++ vars.orderId]"/>
+            <when expression="#[vars.orderExists == false]" doc:name="Not Found">
+                <raise-error type="APP:NOT_FOUND"
+                             description="#['Order not found: ' ++ vars.orderId]"/>
             </when>
-            <otherwise>
-                <logger level="DEBUG" message="[DELETE] Order confirmed for deletion: #[vars.orderId]"/>
+            <otherwise doc:name="Found - Proceed with Delete">
+                <logger level="DEBUG"
+                        message="[DELETE] Order confirmed for deletion: #[vars.orderId]"/>
             </otherwise>
         </choice>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="delete(String)" target="deleted">
-            <java:args>#[{ orderId: vars.orderId }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.delete(String) -->
+        <set-variable variableName="deleted" value="#[true]"
+                      doc:name="Simulate Delete (replaces Java repo delete)"/>
 
-        <set-payload value="#[null]"/>
-        <logger level="INFO" message='[DELETE] #[vars.orderId] removed=#[vars.deleted]'/>
+        <set-payload value="#[null]" doc:name="Set Empty 204 Response"/>
+        <logger level="INFO" message='[DELETE] #[vars.orderId] removed=#[vars.deleted]'
+                doc:name="Log Delete"/>
         <error-handler ref="global-error-handler"/>
     </flow>
 
+    <!-- Order Stats Flow:
+         - OrderRepository.findAll()              -> set-variable empty list
+         - OrderUtils.calculateOrderMetrics(List) -> ee:transform DataWeave aggregation
+    -->
     <flow name="order-stats-impl-flow" doc:name="Order Statistics Implementation">
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="findAll()" target="allOrders"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderUtils"
-                            method="calculateOrderMetrics(List)" target="metrics">
-            <java:args>#[{ orders: vars.allOrders default [] }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.findAll() -->
+        <set-variable variableName="allOrders" value="#[[] as Array]"
+                      doc:name="Load All Orders (replaces Java repo findAll)"/>
+
+        <!-- Replaced: java:invoke-static OrderUtils.calculateOrderMetrics(List) -->
+        <ee:transform doc:name="Calculate Order Metrics - DataWeave">
+            <ee:variables>
+                <ee:set-variable variableName="metrics"><![CDATA[%dw 2.0
+output application/java
+var orders   = vars.allOrders default []
+var total    = sizeOf(orders)
+var rev      = if (total > 0) sum(orders map ($.totalAmount default 0.0)) else 0.0
+var avg      = if (total > 0) rev / total else 0.0
+var byStatus = orders groupBy ($.status)
+---
+{
+  totalOrders:   total,
+  totalRevenue:  rev,
+  avgOrderValue: avg,
+  generatedAt:   now() as String { format: "yyyy-MM-dd'T'HH:mm:ssZ" },
+  byStatus: byStatus mapObject ((v, k) -> { (k): sizeOf(v) })
+}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
 
         <set-payload mimeType="application/json"
                      value="#[%dw 2.0 output application/json var m = vars.metrics ---
 { summary: { totalOrders: m.totalOrders, totalRevenue: m.totalRevenue,
              avgOrderValue: m.avgOrderValue, generatedAt: m.generatedAt },
   byStatus: m.byStatus,
-  links: { orders: '/api/v1/orders', health: '/api/v1/health' } }]"/>
+  links: { orders: '/api/v1/orders', health: '/api/v1/health' } }]"
+                     doc:name="Build Stats Response"/>
 
-        <logger level="INFO" message='[STATS] total=#[vars.metrics.totalOrders] revenue=#[vars.metrics.totalRevenue]'/>
+        <logger level="INFO"
+                message='[STATS] total=#[vars.metrics.totalOrders] revenue=#[vars.metrics.totalRevenue]'
+                doc:name="Log Stats"/>
         <error-handler ref="global-error-handler"/>
     </flow>
 
+    <!-- Customer Enrichment Subflow: no Java components - unchanged -->
     <sub-flow name="customer-enrichment-subflow" doc:name="Customer Enrichment Subflow">
         <http:request config-ref="jsonplaceholder-request-config"
-                      method="GET" path="/{customerId}" responseTimeout="10000">
+                      method="GET" path="/{customerId}" responseTimeout="10000"
+                      doc:name="GET Customer from JSONPlaceholder">
             <http:uri-params>#[{ customerId: (vars.originalRequest.customerId default '1') }]</http:uri-params>
         </http:request>
         <set-payload mimeType="application/json"
@@ -135,35 +209,41 @@ ex ++ {
   company: (payload.company.name default null),
   address: { street: (payload.address.street default null),
              city:   (payload.address.city   default null) },
-  enriched: true }]"/>
-        <logger level="DEBUG" message='[ENRICH] Customer #[payload.id] (#[payload.name])'/>
+  enriched: true }]"
+                     doc:name="Map Enriched Customer Data"/>
+        <logger level="DEBUG" message='[ENRICH] Customer #[payload.id] (#[payload.name])'
+                doc:name="Log Enrichment Result"/>
     </sub-flow>
 
+    <!-- Order Notification Consumer: no Java components - unchanged -->
     <flow name="order-notification-consumer-flow" doc:name="Order Notification Consumer">
         <vm:listener config-ref="order-notifications-vm-config"
                      queueName="${order.notification.queue-name}"
-                     numberOfConsumers="2">
+                     numberOfConsumers="2"
+                     doc:name="VM Order Notification Listener">
             <redelivery-policy maxRedeliveryCount="3" useSecureHash="true"/>
         </vm:listener>
 
         <logger level="INFO"
-                message='[NOTIFY] event=#[payload.event] orderId=#[payload.orderId] lane=#[payload.lane]'/>
+                message='[NOTIFY] event=#[payload.event] orderId=#[payload.orderId] lane=#[payload.lane]'
+                doc:name="Log Notification Received"/>
 
         <choice doc:name="Route by Priority">
-            <when expression="#[payload.priority == 'PRIORITY']">
-                <logger level="INFO" message='[NOTIFY] PRIORITY #[payload.orderId] - VIP'/>
+            <when expression="#[payload.priority == 'PRIORITY']" doc:name="Priority Notification">
+                <logger level="INFO" message='[NOTIFY] PRIORITY #[payload.orderId] - VIP processing'/>
             </when>
-            <when expression="#[payload.priority == 'EXPRESS']">
+            <when expression="#[payload.priority == 'EXPRESS']" doc:name="Express Notification">
                 <logger level="INFO" message='[NOTIFY] EXPRESS #[payload.orderId]'/>
             </when>
-            <otherwise>
+            <otherwise doc:name="Standard Notification">
                 <logger level="DEBUG" message='[NOTIFY] STANDARD #[payload.orderId]'/>
             </otherwise>
         </choice>
 
         <error-handler>
             <on-error-continue type="MULE:REDELIVERY_EXHAUSTED">
-                <logger level="ERROR" message='[DLQ] #[payload.orderId] failed 3 retries: #[error.description]'/>
+                <logger level="ERROR"
+                        message='[DLQ] #[payload.orderId] failed 3 retries: #[error.description]'/>
             </on-error-continue>
             <on-error-continue type="ANY">
                 <logger level="ERROR" message='[NOTIFY] Error: #[error.description]'/>

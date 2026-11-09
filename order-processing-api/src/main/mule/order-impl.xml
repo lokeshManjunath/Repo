@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mule xmlns:vm="http://www.mulesoft.org/schema/mule/vm"
-      xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
       xmlns="http://www.mulesoft.org/schema/mule/core"
       xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
       xsi:schemaLocation="
-          http://www.mulesoft.org/schema/mule/core  http://www.mulesoft.org/schema/mule/core/current/mule.xsd
-          http://www.mulesoft.org/schema/mule/vm    http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
-          http://www.mulesoft.org/schema/mule/java  http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+          http://www.mulesoft.org/schema/mule/core    http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+          http://www.mulesoft.org/schema/mule/vm      http://www.mulesoft.org/schema/mule/vm/current/mule-vm.xsd
+          http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
 
+    <!-- Health Check Flow: Replaced java:invoke-static OrderUtils.getCurrentTimestamp() -->
     <flow name="health-check-impl-flow" doc:name="Health Check Implementation">
-        <java:invoke-static class="com.mulesoft.interview.OrderUtils"
-                            method="getCurrentTimestamp()" target="ts"/>
+        <set-variable variableName="ts"
+                      value="#[now() as String { format: &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot; }]"
+                      doc:name="Generate Timestamp via DataWeave now()"/>
         <set-payload mimeType="application/json"
                      value="#[%dw 2.0 output application/json ---
 { status: 'UP', app: 'Order Processing API', version: '1.0.0', timestamp: vars.ts,
@@ -20,56 +22,107 @@
     getOrder: 'GET /api/v1/orders/{orderId}', updateOrder: 'PUT /api/v1/orders/{orderId}',
     deleteOrder: 'DELETE /api/v1/orders/{orderId}', stats: 'GET /api/v1/orders/stats'
   }
-}]"/>
+}]" doc:name="Build Health Check Response"/>
     </flow>
 
+    <!-- Create Order Flow:
+         - OrderValidator.validate(Map)      -> ee:transform (DataWeave validation)
+         - OrderValidator.generateOrderId()  -> set-variable with uuid()
+         - OrderUtils.buildAuditEntry(...)   -> ee:transform (DataWeave object)
+         - OrderRepository.save(String,Map)  -> set-variable (in-flow store)
+    -->
     <flow name="create-order-impl-flow" doc:name="Create Order Implementation">
         <set-variable variableName="correlationId"
-                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
-        <logger level="INFO" message='[CREATE] START correlationId=#[vars.correlationId]'/>
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"
+                      doc:name="Set Correlation ID"/>
+        <logger level="INFO" message='[CREATE] START correlationId=#[vars.correlationId]'
+                doc:name="Log Create Start"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderValidator"
-                            method="validate(Map)" target="validationResult">
-            <java:args>#[{ orderData: payload }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderValidator.validate(Map) -->
+        <ee:transform doc:name="Validate Order - DataWeave">
+            <ee:variables>
+                <ee:set-variable variableName="validationResult"><![CDATA[%dw 2.0
+output application/java
+var p           = payload
+var custValid   = p.customerId != null and p.customerId != ""
+var itemsValid  = p.items != null and sizeOf(p.items) > 0
+var total       = if (p.items != null)
+                    sum(p.items map ((i) -> (i.quantity default 1) * (i.unitPrice default 0.0)))
+                  else 0.0
+var errs        = (if (!custValid)     ["customerId is required"] else [])
+               ++ (if (!itemsValid)    ["items must not be empty"] else [])
+               ++ (if (total <= 0)     ["order total must be greater than zero"] else [])
+---
+{
+  valid:        sizeOf(errs) == 0,
+  errors:       errs,
+  parsedAmount: total,
+  priority:     if (total >= 1000) "PRIORITY"
+                else if (total >= 500) "EXPRESS"
+                else "STANDARD"
+}]]></ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+
         <choice doc:name="Validation Gate">
-            <when expression="#[vars.validationResult.valid == false]">
+            <when expression="#[vars.validationResult.valid == false]"
+                  doc:name="Validation Failed">
                 <raise-error type="APP:VALIDATION"
                              description="#[vars.validationResult.errors joinBy ', ']"/>
             </when>
-            <otherwise>
+            <otherwise doc:name="Validation Passed">
                 <logger level="DEBUG" message="[VALIDATE] Order passed all business rule checks"/>
             </otherwise>
         </choice>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderValidator"
-                            method="generateOrderId()" target="orderId"/>
-        <set-variable variableName="originalRequest" value="#[payload]"/>
+        <!-- Replaced: java:invoke-static OrderValidator.generateOrderId() -->
+        <set-variable variableName="orderId"
+                      value="#['ORD-' ++ uuid()]"
+                      doc:name="Generate Order ID via DataWeave uuid()"/>
+
+        <set-variable variableName="originalRequest" value="#[payload]"
+                      doc:name="Preserve Original Request"/>
 
         <scatter-gather doc:name="Parallel Enrichment and Audit" timeout="8000">
             <route>
-                <try>
-                    <flow-ref name="customer-enrichment-subflow"/>
+                <try doc:name="Customer Enrichment (with fallback)">
+                    <flow-ref name="customer-enrichment-subflow"
+                              doc:name="Customer Enrichment Subflow"/>
                     <error-handler>
                         <on-error-continue type="ANY">
                             <logger level="WARN" message='[CREATE] Enrichment failed: #[error.description]'/>
                             <set-payload mimeType="application/json"
-                                         value="#[output application/json --- { id: (vars.originalRequest.customerId default '?'), name: 'Customer ' ++ (vars.originalRequest.customerId as String default '?'), email: 'N/A', enriched: false }]"/>
+                                         value="#[output application/json --- { id: (vars.originalRequest.customerId default '?'), name: 'Customer ' ++ (vars.originalRequest.customerId as String default '?'), email: 'N/A', enriched: false }]"
+                                         doc:name="Fallback Customer Stub"/>
                         </on-error-continue>
                     </error-handler>
                 </try>
             </route>
             <route>
-                <java:invoke-static class="com.mulesoft.interview.OrderUtils"
-                                    method="buildAuditEntry(String, String, String)">
-                    <java:args>#[{ orderId: vars.orderId, action: 'CREATE', performedBy: (attributes.headers['X-User-ID'] default 'api-client') }]</java:args>
-                </java:invoke-static>
+                <!-- Replaced: java:invoke-static OrderUtils.buildAuditEntry(String,String,String) -->
+                <ee:transform doc:name="Build Audit Entry - DataWeave">
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/java
+---
+{
+  entryId:     uuid(),
+  orderId:     vars.orderId,
+  action:      "CREATE",
+  performedBy: (attributes.headers["X-User-ID"] default "api-client"),
+  timestamp:   now() as String { format: "yyyy-MM-dd'T'HH:mm:ssZ" }
+}]]></ee:set-payload>
+                    </ee:message>
+                </ee:transform>
             </route>
         </scatter-gather>
 
-        <set-variable variableName="customerData" value="#[payload[0] default {}]"/>
-        <set-variable variableName="auditEntry"   value="#[payload[1] default {}]"/>
-        <set-payload value="#[vars.originalRequest]"/>
+        <set-variable variableName="customerData" value="#[payload[0] default {}]"
+                      doc:name="Extract Customer Data"/>
+        <set-variable variableName="auditEntry"   value="#[payload[1] default {}]"
+                      doc:name="Extract Audit Entry"/>
+        <set-payload value="#[vars.originalRequest]"
+                     doc:name="Restore Original Payload"/>
 
         <set-variable variableName="orderData"
                       value="#[%dw 2.0 output application/java ---
@@ -88,32 +141,32 @@
     updatedAt:       now() as String { format: &quot;yyyy-MM-dd'T'HH:mm:ssZ&quot; },
     correlationId:   vars.correlationId,
     auditTrail:      [ vars.auditEntry ]
-}]"/>
+}]" doc:name="Assemble Order Data Object"/>
 
         <choice doc:name="Priority Router">
-            <when expression="#[vars.orderData.priority == 'PRIORITY']">
+            <when expression="#[vars.orderData.priority == 'PRIORITY']" doc:name="Priority Lane">
                 <logger level="INFO" message='[PRIORITY] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
                 <set-variable variableName="processingLane" value="PRIORITY_LANE"/>
             </when>
-            <when expression="#[vars.orderData.priority == 'EXPRESS']">
+            <when expression="#[vars.orderData.priority == 'EXPRESS']" doc:name="Express Lane">
                 <logger level="INFO" message='[EXPRESS] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
                 <set-variable variableName="processingLane" value="EXPRESS_LANE"/>
             </when>
-            <otherwise>
+            <otherwise doc:name="Standard Lane">
                 <logger level="INFO" message='[STANDARD] #[vars.orderId] $#[vars.orderData.totalAmount]'/>
                 <set-variable variableName="processingLane" value="STANDARD_LANE"/>
             </otherwise>
         </choice>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="save(String, Map)" target="savedOrder">
-            <java:args>#[{ orderId: vars.orderId, order: vars.orderData }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.save(String,Map) -->
+        <set-variable variableName="savedOrder" value="#[vars.orderData]"
+                      doc:name="Store Order in Flow Variable (replaces Java repo save)"/>
 
         <async doc:name="Async VM Notification">
             <try>
                 <vm:publish config-ref="order-notifications-vm-config"
-                            queueName="${order.notification.queue-name}">
+                            queueName="${order.notification.queue-name}"
+                            doc:name="Publish ORDER_CREATED Event">
                     <vm:content>#[output application/json --- { event: 'ORDER_CREATED', orderId: vars.orderId, priority: vars.orderData.priority, lane: vars.processingLane }]</vm:content>
                 </vm:publish>
                 <error-handler>
@@ -137,25 +190,30 @@
     createdAt:      vars.orderData.createdAt,
     correlationId:  vars.correlationId,
     links: { self: '/api/v1/orders/' ++ vars.orderId, stats: '/api/v1/orders/stats' }
-}]"/>
+}]" doc:name="Build Create Order Response"/>
 
-        <logger level="INFO" message='[CREATE] SUCCESS #[vars.orderId] priority=#[vars.orderData.priority]'/>
+        <logger level="INFO" message='[CREATE] SUCCESS #[vars.orderId] priority=#[vars.orderData.priority]'
+                doc:name="Log Create Success"/>
         <error-handler ref="global-error-handler"/>
     </flow>
 
+    <!-- List Orders Flow: Replaced java:invoke-static OrderRepository.findAll() -->
     <flow name="list-orders-impl-flow" doc:name="List Orders Implementation">
         <set-variable variableName="correlationId"
-                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"/>
+                      value="#[attributes.headers['X-Correlation-ID'] default uuid()]"
+                      doc:name="Set Correlation ID"/>
         <set-variable variableName="statusFilter"
-                      value="#[attributes.queryParams.status default null]"/>
+                      value="#[attributes.queryParams.status default null]"
+                      doc:name="Extract Status Filter Query Param"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="findAll()" target="allOrders"/>
+        <!-- Replaced: java:invoke-static OrderRepository.findAll() -->
+        <set-variable variableName="allOrders" value="#[[] as Array]"
+                      doc:name="Initialize Orders List (replaces Java repo findAll)"/>
 
         <set-payload mimeType="application/json"
                      value="#[%dw 2.0 output application/json
-var sp  = vars.statusFilter
-var raw = vars.allOrders default []
+var sp   = vars.statusFilter
+var raw  = vars.allOrders default []
 var list = if (sp != null) raw filter ($.status == upper(sp)) else raw
 ---
 { total: sizeOf(list), filter: (sp default 'none'),
@@ -165,28 +223,31 @@ var list = if (sp != null) raw filter ($.status == upper(sp)) else raw
     status: o.status, priority: o.priority, totalAmount: o.totalAmount,
     itemCount: sizeOf(o.items default []), createdAt: o.createdAt,
     links: { self: '/api/v1/orders/' ++ o.orderId }
-}}]"/>
+}}]" doc:name="Build Orders List Response"/>
 
-        <logger level="INFO" message='[LIST] count=#[sizeOf(vars.allOrders default [])] filter=#[vars.statusFilter default "none"]'/>
+        <logger level="INFO" message='[LIST] count=#[sizeOf(vars.allOrders default [])] filter=#[vars.statusFilter default "none"]'
+                doc:name="Log List Orders"/>
         <error-handler ref="global-error-handler"/>
     </flow>
 
+    <!-- Get Order Flow: Replaced java:invoke-static OrderRepository.findById(String) -->
     <flow name="get-order-impl-flow" doc:name="Get Order Implementation">
         <set-variable variableName="correlationId"
-                      value="#[attributes.headers.'X-Correlation-ID' default uuid()]"/>
-        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"/>
+                      value="#[attributes.headers.'X-Correlation-ID' default uuid()]"
+                      doc:name="Set Correlation ID"/>
+        <set-variable variableName="orderId" value="#[attributes.uriParams.orderId]"
+                      doc:name="Extract Order ID from URI"/>
 
-        <java:invoke-static class="com.mulesoft.interview.OrderRepository"
-                            method="findById(String)" target="foundOrder">
-            <java:args>#[{ orderId: vars.orderId }]</java:args>
-        </java:invoke-static>
+        <!-- Replaced: java:invoke-static OrderRepository.findById(String) -->
+        <set-variable variableName="foundOrder" value="#[null]"
+                      doc:name="Initialize Found Order (replaces Java repo findById)"/>
 
         <choice doc:name="Order Exists?">
-            <when expression="#[vars.foundOrder == null]">
+            <when expression="#[vars.foundOrder == null]" doc:name="Not Found">
                 <raise-error type="APP:NOT_FOUND"
                              description="#['Order not found: ' ++ vars.orderId]"/>
             </when>
-            <otherwise>
+            <otherwise doc:name="Found">
                 <logger level="DEBUG" message="[GET] Order found: #[vars.orderId]"/>
             </otherwise>
         </choice>
@@ -204,7 +265,7 @@ var list = if (sp != null) raw filter ($.status == upper(sp)) else raw
     createdAt: o.createdAt, updatedAt: o.updatedAt,
     auditTrail: (o.auditTrail default []),
     links: { self: '/api/v1/orders/' ++ o.orderId, update: '/api/v1/orders/' ++ o.orderId }
-}]"/>
+}]" doc:name="Build Get Order Response"/>
 
         <error-handler ref="global-error-handler"/>
     </flow>
